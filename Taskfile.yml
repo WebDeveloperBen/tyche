@@ -1,0 +1,51 @@
+version: "3"
+
+dotenv: [".env"]
+
+tasks:
+  default:
+    cmds:
+      - task dev
+
+  build:
+    desc: Build the API binary using generated codecs from a temporary worktree
+    cmds:
+      - mkdir -p "{{.TASK_DIR}}/bin"
+      - go run ./cmd/servergen build -o "{{.TASK_DIR}}/bin/api" ./cmd/api
+
+  dev:
+    desc: Start dependencies and run the API with Air hot reload and generated codecs
+    cmds:
+      - air -c .air.toml
+
+  run:
+    desc: Run the built binary
+    cmds:
+      - ./bin/api
+
+  clean:
+    desc: Remove local build and temporary worktree artefacts
+    cmds:
+      - rm -rf ./bin ./tmp
+
+  tests:
+    desc: Run all Go tests against a temporary generated worktree
+    cmds:
+      - go run ./cmd/servergen test ./...
+
+  benchmark:regen-fixtures:
+    desc: Regenerate benchmark fixture codecs
+    cmds:
+      - go run ./cmd/servergen generate ./servergen/testdata/samplepkg/...
+
+  benchmark:
+    desc: Regenerate benchmark fixtures and run the benchmark suite
+    cmds:
+      - task benchmark:regen-fixtures
+      - GOCACHE="{{.TASK_DIR}}/.gocache" go test -run '^$' -bench 'Benchmark(Router_|TypedRoute_)' -benchmem ./server
+
+  benchmark:comparison:
+    desc: Regenerate benchmark fixtures and run the cross-framework comparison benchmarks
+    cmds:
+      - task benchmark:regen-fixtures
+      - GOCACHE="{{.TASK_DIR}}/.gocache" go test -tags comparison -run '^$' -bench 'BenchmarkRouter_(Static|Param|Body|Nested)$' -benchmem ./server

@@ -1,0 +1,3 @@
+tmp/
+bin/
+**/zz_server_routes_gen.go
