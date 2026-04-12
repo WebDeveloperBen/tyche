@@ -23,6 +23,19 @@ var generatedCodecRegistry struct {
 	codecs []generatedCodecEntry
 }
 
+var encoderBufPool = sync.Pool{
+	New: func() any {
+		return &bytes.Buffer{}
+	},
+}
+
+var generatedJSONBytePool = sync.Pool{
+	New: func() any {
+		buf := make([]byte, 0, 256)
+		return &buf
+	},
+}
+
 func RegisterGeneratedCodec(meta GeneratedRouteMeta, codec GeneratedRouteCodec) {
 	generatedCodecRegistry.mu.Lock()
 	defer generatedCodecRegistry.mu.Unlock()
@@ -59,30 +72,22 @@ func WriteTypedResponse[O any](w http.ResponseWriter, out *O) error {
 		w.WriteHeader(http.StatusNoContent)
 		return nil
 	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
+
 	buf := encoderBufPool.Get().(*bytes.Buffer)
 	buf.Reset()
+
 	defer encoderBufPool.Put(buf)
+
 	enc := json.NewEncoder(buf)
 	if err := enc.Encode(out); err != nil {
 		return err
 	}
+
 	_, writeErr := w.Write(buf.Bytes())
 	return writeErr
-}
-
-var encoderBufPool = sync.Pool{
-	New: func() any {
-		return &bytes.Buffer{}
-	},
-}
-
-var generatedJSONBytePool = sync.Pool{
-	New: func() any {
-		buf := make([]byte, 0, 256)
-		return &buf
-	},
 }
 
 func AcquireGeneratedJSONBuffer() *[]byte {
