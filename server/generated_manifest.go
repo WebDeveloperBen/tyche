@@ -53,8 +53,8 @@ func generatedRouteMeta(op Operation, inputType, outputType reflect.Type) (Gener
 	generatedManifestRegistry.mu.RLock()
 	defer generatedManifestRegistry.mu.RUnlock()
 
-	inputKey := generatedTypeKey(inputType)
-	outputKey := generatedTypeKey(outputType)
+	inputKey := GeneratedTypeKey(inputType)
+	outputKey := GeneratedTypeKey(outputType)
 	for _, route := range generatedManifestRegistry.routes {
 		if route.OperationID == op.OperationID &&
 			route.Method == op.Method &&
@@ -71,7 +71,7 @@ func generatedRouteIdentity(route GeneratedRouteMeta) string {
 	return route.PackagePath + "|" + route.OperationID + "|" + route.Method + "|" + route.Path + "|" + route.InputTypeKey + "|" + route.OutputTypeKey
 }
 
-func generatedTypeKey(t reflect.Type) string {
+func GeneratedTypeKey(t reflect.Type) string {
 	base := indirectType(t)
 	if base.PkgPath() != "" && base.Name() != "" {
 		return base.PkgPath() + "." + base.Name()

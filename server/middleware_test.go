@@ -1,17 +1,19 @@
-package server
+package server_test
 
 import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/webdeveloperben/tyche/server"
 )
 
 func TestMiddleware_Basic(t *testing.T) {
-	router := NewRouter()
+	router := server.NewRouter()
 
 	var order []string
 
-	middleware := func(next HandlerFunc) HandlerFunc {
+	middleware := func(next server.HandlerFunc) server.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) error {
 			order = append(order, "before")
 			err := next(w, r)
@@ -44,18 +46,18 @@ func TestMiddleware_Basic(t *testing.T) {
 }
 
 func TestMiddleware_Multiple(t *testing.T) {
-	router := NewRouter()
+	router := server.NewRouter()
 
 	var order []string
 
-	mw1 := func(next HandlerFunc) HandlerFunc {
+	mw1 := func(next server.HandlerFunc) server.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) error {
 			order = append(order, "mw1-before")
 			return next(w, r)
 		}
 	}
 
-	mw2 := func(next HandlerFunc) HandlerFunc {
+	mw2 := func(next server.HandlerFunc) server.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) error {
 			order = append(order, "mw2-before")
 			return next(w, r)
@@ -85,13 +87,13 @@ func TestMiddleware_Multiple(t *testing.T) {
 }
 
 func TestMiddleware_ErrorInHandler(t *testing.T) {
-	router := NewRouter()
+	router := server.NewRouter()
 
-	middleware := func(next HandlerFunc) HandlerFunc {
+	middleware := func(next server.HandlerFunc) server.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) error {
 			err := next(w, r)
 			if err != nil {
-				if httpErr, ok := err.(HTTPError); ok {
+				if httpErr, ok := err.(server.HTTPError); ok {
 					http.Error(w, httpErr.Message, httpErr.StatusCode)
 				}
 			}
@@ -103,7 +105,7 @@ func TestMiddleware_ErrorInHandler(t *testing.T) {
 	g.Use(middleware)
 
 	g.GET("/error", func(w http.ResponseWriter, r *http.Request) error {
-		return NewHTTPError(400, "Invalid input")
+		return server.NewHTTPError(400, "Invalid input")
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/error", nil)
@@ -116,13 +118,13 @@ func TestMiddleware_ErrorInHandler(t *testing.T) {
 }
 
 func TestMiddleware_RequestContext(t *testing.T) {
-	router := NewRouter()
+	router := server.NewRouter()
 
 	var idInHandler string
 
-	middleware := func(next HandlerFunc) HandlerFunc {
+	middleware := func(next server.HandlerFunc) server.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) error {
-			idInHandler = Param(r, "id")
+			idInHandler = server.Param(r, "id")
 			return next(w, r)
 		}
 	}

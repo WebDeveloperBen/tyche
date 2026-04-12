@@ -58,7 +58,7 @@ const (
 	methodTrace
 )
 
-func methodIndex(method string) int {
+func MethodIndex(method string) int {
 	switch len(method) {
 	case 3:
 		if method[0] == 'G' && method[1] == 'E' && method[2] == 'T' {
@@ -114,7 +114,7 @@ func (n *node) addRoute(route string) *node {
 		return n
 	}
 
-	parts := splitRouteFast(route)
+	parts := SplitRouteFast(route)
 	curr := n
 
 	for _, part := range parts {
@@ -147,7 +147,7 @@ func (n *node) addRoute(route string) *node {
 	return curr
 }
 
-func splitRouteFast(route string) []string {
+func SplitRouteFast(route string) []string {
 	if route == "/" {
 		return nil
 	}
@@ -184,12 +184,12 @@ type findResult struct {
 	methodAllowed bool
 }
 
-func (n *node) find(method string, path string) findResult {
+func (n *node) Find(method string, path string) findResult {
 	if len(path) == 0 || path[0] != '/' {
 		return findResult{}
 	}
 
-	idx := methodIndex(method)
+	idx := MethodIndex(method)
 	if idx < 0 {
 		return findResult{routeExists: false}
 	}
@@ -300,7 +300,7 @@ func (n *node) hasAnyHandler() bool {
 }
 
 func (n *node) setHandler(method, route string, fn HandlerFunc, params []string, wildcard string, group *Group, wrappedFn HandlerFunc) error {
-	idx := methodIndex(method)
+	idx := MethodIndex(method)
 	if idx >= 0 {
 		if n.handlers[idx] != nil {
 			return fmt.Errorf("duplicate route handler registered for %s %s", method, route)

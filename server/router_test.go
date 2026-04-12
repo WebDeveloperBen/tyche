@@ -1,13 +1,15 @@
-package server
+package server_test
 
 import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/webdeveloperben/tyche/server"
 )
 
 func TestRouter_BasicRouting(t *testing.T) {
-	router := NewRouter()
+	router := server.NewRouter()
 
 	var called bool
 	router.GET("/test", func(w http.ResponseWriter, r *http.Request) error {
@@ -32,7 +34,7 @@ func TestRouter_BasicRouting(t *testing.T) {
 }
 
 func TestRouter_NotFound(t *testing.T) {
-	router := NewRouter()
+	router := server.NewRouter()
 
 	router.GET("/exists", func(w http.ResponseWriter, r *http.Request) error {
 		return nil
@@ -48,7 +50,7 @@ func TestRouter_NotFound(t *testing.T) {
 }
 
 func TestRouter_AllMethods(t *testing.T) {
-	router := NewRouter()
+	router := server.NewRouter()
 
 	methods := []string{
 		http.MethodGet,
@@ -103,7 +105,7 @@ func TestRouter_AllMethods(t *testing.T) {
 }
 
 func TestRouter_MethodMismatch(t *testing.T) {
-	router := NewRouter()
+	router := server.NewRouter()
 
 	router.POST("/resource", func(w http.ResponseWriter, r *http.Request) error {
 		return nil
@@ -119,7 +121,7 @@ func TestRouter_MethodMismatch(t *testing.T) {
 }
 
 func TestRouter_RootPath(t *testing.T) {
-	router := NewRouter()
+	router := server.NewRouter()
 
 	var called bool
 	router.GET("/", func(w http.ResponseWriter, r *http.Request) error {
@@ -147,7 +149,7 @@ func TestRouter_EmptyPattern(t *testing.T) {
 		}
 	}()
 
-	router := NewRouter()
+	router := server.NewRouter()
 	router.GET("test", func(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	})

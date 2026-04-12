@@ -1,13 +1,15 @@
-package server
+package server_test
 
 import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/webdeveloperben/tyche/server"
 )
 
 func TestGroup_Basic(t *testing.T) {
-	router := NewRouter()
+	router := server.NewRouter()
 
 	var called bool
 	g := router.Group("/api")
@@ -29,7 +31,7 @@ func TestGroup_Basic(t *testing.T) {
 }
 
 func TestGroup_Nested(t *testing.T) {
-	router := NewRouter()
+	router := server.NewRouter()
 
 	var pathInHandler string
 	g1 := router.Group("/api")
@@ -37,7 +39,7 @@ func TestGroup_Nested(t *testing.T) {
 	g3 := g2.Group("/users")
 
 	g3.GET("/:id", func(w http.ResponseWriter, r *http.Request) error {
-		pathInHandler = Param(r, "id")
+		pathInHandler = server.Param(r, "id")
 		return nil
 	})
 
@@ -54,11 +56,11 @@ func TestGroup_Nested(t *testing.T) {
 }
 
 func TestGroup_Middleware(t *testing.T) {
-	router := NewRouter()
+	router := server.NewRouter()
 
 	var order []string
 
-	middleware := func(next HandlerFunc) HandlerFunc {
+	middleware := func(next server.HandlerFunc) server.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) error {
 			order = append(order, "middleware")
 			return next(w, r)
@@ -82,7 +84,7 @@ func TestGroup_Middleware(t *testing.T) {
 }
 
 func TestGroup_MultipleGroups(t *testing.T) {
-	router := NewRouter()
+	router := server.NewRouter()
 
 	var api1Called, api2Called bool
 
@@ -116,7 +118,7 @@ func TestGroup_MultipleGroups(t *testing.T) {
 }
 
 func TestGroup_EmptyPrefix(t *testing.T) {
-	router := NewRouter()
+	router := server.NewRouter()
 
 	var called bool
 	g := router.Group("")
@@ -135,7 +137,7 @@ func TestGroup_EmptyPrefix(t *testing.T) {
 }
 
 func TestGroup_AllHTTPMethods(t *testing.T) {
-	router := NewRouter()
+	router := server.NewRouter()
 
 	g := router.Group("/api")
 
@@ -183,17 +185,17 @@ func TestGroup_AllHTTPMethods(t *testing.T) {
 }
 
 func TestGroup_UseAddsMiddleware(t *testing.T) {
-	router := NewRouter()
+	router := server.NewRouter()
 
 	var order []string
 
-	mw1 := func(next HandlerFunc) HandlerFunc {
+	mw1 := func(next server.HandlerFunc) server.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) error {
 			order = append(order, "mw1")
 			return next(w, r)
 		}
 	}
-	mw2 := func(next HandlerFunc) HandlerFunc {
+	mw2 := func(next server.HandlerFunc) server.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) error {
 			order = append(order, "mw2")
 			return next(w, r)
@@ -218,16 +220,16 @@ func TestGroup_UseAddsMiddleware(t *testing.T) {
 }
 
 func TestGroup_SiblingMiddlewareDoesNotLeak(t *testing.T) {
-	router := NewRouter()
+	router := server.NewRouter()
 	var calls []string
 
-	api := router.Group("/api", func(next HandlerFunc) HandlerFunc {
+	api := router.Group("/api", func(next server.HandlerFunc) server.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) error {
 			calls = append(calls, "api")
 			return next(w, r)
 		}
 	})
-	admin := router.Group("/admin", func(next HandlerFunc) HandlerFunc {
+	admin := router.Group("/admin", func(next server.HandlerFunc) server.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) error {
 			calls = append(calls, "admin")
 			return next(w, r)
@@ -259,7 +261,7 @@ func TestGroup_SiblingMiddlewareDoesNotLeak(t *testing.T) {
 }
 
 func TestGroup_ParentUseAfterChildCreationRebuildsHandlers(t *testing.T) {
-	router := NewRouter()
+	router := server.NewRouter()
 	var calls []string
 
 	parent := router.Group("/api")
@@ -269,7 +271,7 @@ func TestGroup_ParentUseAfterChildCreationRebuildsHandlers(t *testing.T) {
 		return nil
 	})
 
-	parent.Use(func(next HandlerFunc) HandlerFunc {
+	parent.Use(func(next server.HandlerFunc) server.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) error {
 			calls = append(calls, "parent")
 			return next(w, r)

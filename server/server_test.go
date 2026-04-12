@@ -1,4 +1,4 @@
-package server
+package server_test
 
 import (
 	"context"
@@ -6,10 +6,12 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/webdeveloperben/tyche/server"
 )
 
 func TestServer_Basic(t *testing.T) {
-	router := NewRouter()
+	router := server.NewRouter()
 	router.GET("/test", func(w http.ResponseWriter, r *http.Request) error {
 		w.Write([]byte("OK"))
 		return nil
@@ -31,7 +33,7 @@ func TestServer_Basic(t *testing.T) {
 }
 
 func TestServer_DefaultConfig(t *testing.T) {
-	cfg := DefaultConfig(":8080")
+	cfg := server.DefaultConfig(":8080")
 
 	if cfg.Address != ":8080" {
 		t.Errorf("expected address :8080, got %s", cfg.Address)
@@ -42,13 +44,13 @@ func TestServer_DefaultConfig(t *testing.T) {
 }
 
 func TestServer_ListenAndServeTLS(t *testing.T) {
-	router := NewRouter()
+	router := server.NewRouter()
 	router.GET("/test", func(w http.ResponseWriter, r *http.Request) error {
 		w.Write([]byte("OK"))
 		return nil
 	})
 
-	cfg := Config{
+	cfg := server.Config{
 		Address:         ":0",
 		ReadTimeout:     1 * time.Second,
 		WriteTimeout:    1 * time.Second,
@@ -56,7 +58,7 @@ func TestServer_ListenAndServeTLS(t *testing.T) {
 		ShutdownTimeout: 1 * time.Second,
 	}
 
-	srv := New(cfg, router)
+	srv := server.New(cfg, router)
 
 	go func() {
 		srv.ListenAndServeTLS("testdata/cert.pem", "testdata/key.pem")

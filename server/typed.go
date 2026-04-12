@@ -146,7 +146,7 @@ func registerOpenAPIOperation(grp *Group, op Operation, inputType, outputType re
 
 	inputSchema := registry.Schema(inputType)
 	outputSchema := registry.Schema(outputType)
-	openAPIPath := serverPathToOpenAPIPath(joinPath(grp.prefix, op.Path))
+	openAPIPath := ServerPathToOpenAPIPath(joinPath(grp.prefix, op.Path))
 
 	docOp := &openapi.Operation{
 		Summary:     op.Summary,
@@ -165,7 +165,7 @@ func registerOpenAPIOperation(grp *Group, op Operation, inputType, outputType re
 	if inputName == "" {
 		inputName = fmt.Sprintf("InlineInput%s", sanitizeOperationID(openAPIPath))
 	} else {
-		inputName = schemaComponentName(inputType)
+		inputName = SchemaComponentName(inputType)
 	}
 	doc.AddSchema(inputName, inputSchema)
 
@@ -173,7 +173,7 @@ func registerOpenAPIOperation(grp *Group, op Operation, inputType, outputType re
 	if outputName == "" {
 		outputName = fmt.Sprintf("InlineOutput%s", sanitizeOperationID(openAPIPath))
 	} else {
-		outputName = schemaComponentName(outputType)
+		outputName = SchemaComponentName(outputType)
 	}
 	doc.AddSchema(outputName, outputSchema)
 
@@ -257,16 +257,24 @@ func extractResponses(spec *outputSpec, registry *openapi.Registry) map[string]*
 			Description: "Successful response",
 			Headers:     responseHeadersForSpec(spec, registry),
 			Content: map[string]*openapi.MediaType{
-				"application/json": {Schema: bodySchemaForOutputSpec(spec, registry)},
+				"application/json": {Schema: &openapi.Schema{
+					Type: "object",
+					Properties: map[string]*openapi.Schema{
+						"data": bodySchemaForOutputSpec(spec, registry),
+					},
+				}},
 			},
 		},
 		"default": {
 			Description: "Error response",
 			Content: map[string]*openapi.MediaType{
-				"application/json": {Schema: &openapi.Schema{
+				"application/problem+json": {Schema: &openapi.Schema{
 					Type: "object",
 					Properties: map[string]*openapi.Schema{
-						"error": {Type: "string"},
+						"type":   {Type: "string"},
+						"status": {Type: "integer"},
+						"title":  {Type: "string"},
+						"detail": {Type: "string"},
 					},
 				}},
 			},
@@ -333,6 +341,16 @@ func WriteJSON(w http.ResponseWriter, status int, v any) error {
 		return nil
 	}
 	return json.NewEncoder(w).Encode(v)
+}
+
+// DataResponse is the standard envelope for all successful API responses.
+type DataResponse struct {
+	Data any `json:"data"`
+}
+
+// WriteSuccess writes a successful JSON response wrapped in the standard DataResponse envelope.
+func WriteSuccess(w http.ResponseWriter, status int, data any) error {
+	return WriteJSON(w, status, DataResponse{Data: data})
 }
 
 type inputBinding struct {
@@ -475,13 +493,13 @@ func inputSpecForType(t reflect.Type) *inputSpec {
 			spec.bodyIndex = i
 			spec.bodyType = validation.IndirectType(f.Type)
 			spec.bodyRequired = validation.FieldRequired(f, "json")
-			spec.requiredBodyFields = requiredJSONFields(spec.bodyType, nil, nil)
+			spec.requiredBodyFields = RequiredJSONFields(spec.bodyType, nil, nil)
 		case validation.IsJSONBodyField(f):
 			if spec.bodyMode == bodyModeNone {
 				spec.bodyMode = bodyModeStruct
 				spec.bodyType = t
 				spec.bodyRequired = hasRequiredJSONFields(t)
-				spec.requiredBodyFields = requiredJSONFields(t, nil, nil)
+				spec.requiredBodyFields = RequiredJSONFields(t, nil, nil)
 			}
 		}
 	}
@@ -502,7 +520,7 @@ func decodeRequestBody(req *http.Request, target reflect.Value, spec *inputSpec)
 		}
 		return nil
 	}
-	if err := validateRequiredJSONFields(bodyBytes, spec.requiredBodyFields); err != nil {
+	if err := ValidateRequiredJSONFields(bodyBytes, spec.requiredBodyFields); err != nil {
 		return err
 	}
 
@@ -682,7 +700,7 @@ func DecodeRequestJSONBodyStrictFast(req *http.Request, dst any, bodyRequired bo
 		}
 		return nil
 	}
-	if err := validateRequiredJSONFields(bodyBytes, required); err != nil {
+	if err := ValidateRequiredJSONFields(bodyBytes, required); err != nil {
 		return err
 	}
 	decoder := json.NewDecoder(bytes.NewReader(bodyBytes))
@@ -739,7 +757,7 @@ func EnsureSingleJSONValue(decoder *json.Decoder) error {
 	return ensureSingleJSONValue(decoder)
 }
 
-func validateRequiredJSONFields(body []byte, required []RequiredJSONField) error {
+func ValidateRequiredJSONFields(body []byte, required []RequiredJSONField) error {
 	if len(required) == 0 {
 		return nil
 	}
@@ -995,10 +1013,10 @@ func jsonFieldName(f reflect.StructField) (string, bool) {
 }
 
 func hasRequiredJSONFields(t reflect.Type) bool {
-	return len(requiredJSONFields(t, nil, nil)) > 0
+	return len(RequiredJSONFields(t, nil, nil)) > 0
 }
 
-func requiredJSONFields(t reflect.Type, pointerPrefix, pathPrefix []string) []RequiredJSONField {
+func RequiredJSONFields(t reflect.Type, pointerPrefix, pathPrefix []string) []RequiredJSONField {
 	t = validation.IndirectType(t)
 	if t.Kind() != reflect.Struct {
 		return nil
@@ -1010,7 +1028,7 @@ func requiredJSONFields(t reflect.Type, pointerPrefix, pathPrefix []string) []Re
 			continue
 		}
 		if f.Tag.Get("body") != "" || f.Name == "Body" {
-			fields = append(fields, requiredJSONFields(f.Type, pointerPrefix, pathPrefix)...)
+			fields = append(fields, RequiredJSONFields(f.Type, pointerPrefix, pathPrefix)...)
 			continue
 		}
 		name, ok := jsonFieldName(f)
@@ -1027,12 +1045,12 @@ func requiredJSONFields(t reflect.Type, pointerPrefix, pathPrefix []string) []Re
 		switch fieldType.Kind() {
 		case reflect.Struct:
 			if required && !isScalarStruct(fieldType) {
-				fields = append(fields, requiredJSONFields(f.Type, pointerPath, path)...)
+				fields = append(fields, RequiredJSONFields(f.Type, pointerPath, path)...)
 			}
 		case reflect.Slice, reflect.Array:
 			elemType := validation.IndirectType(fieldType.Elem())
 			if required && elemType.Kind() == reflect.Struct && !isScalarStruct(elemType) {
-				fields = append(fields, requiredJSONFields(elemType, pointerPath, append(path, "*"))...)
+				fields = append(fields, RequiredJSONFields(elemType, pointerPath, append(path, "*"))...)
 			}
 		}
 	}
@@ -1047,11 +1065,11 @@ func isZeroValue(v reflect.Value) bool {
 	return !v.IsValid() || v.IsZero()
 }
 
-func serverPathToOpenAPIPath(path string) string {
+func ServerPathToOpenAPIPath(path string) string {
 	if path == "" || (!strings.Contains(path, ":") && !strings.Contains(path, "*")) {
 		return path
 	}
-	parts := splitRouteFast(path)
+	parts := SplitRouteFast(path)
 	if len(parts) == 0 {
 		return path
 	}
@@ -1087,7 +1105,7 @@ func sanitizeOperationID(path string) string {
 	return strings.NewReplacer("/", "_", ":", "", "{", "", "}", "", "*", "", "-", "_").Replace(path)
 }
 
-func schemaComponentName(t reflect.Type) string {
+func SchemaComponentName(t reflect.Type) string {
 	base := indirectType(t)
 	if base == nil {
 		return ""

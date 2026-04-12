@@ -1,4 +1,4 @@
-package server
+package server_test
 
 import (
 	"net/http"
@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/webdeveloperben/tyche/server"
 	"github.com/webdeveloperben/tyche/server/validation"
 )
 
@@ -24,7 +25,7 @@ type benchmarkValidationInput struct {
 }
 
 func BenchmarkRouter_StaticRoute(b *testing.B) {
-	router := NewRouter()
+	router := server.NewRouter()
 	router.GET("/api/users", func(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	})
@@ -40,9 +41,9 @@ func BenchmarkRouter_StaticRoute(b *testing.B) {
 }
 
 func BenchmarkRouter_ParamRoute(b *testing.B) {
-	router := NewRouter()
+	router := server.NewRouter()
 	router.GET("/api/users/:id", func(w http.ResponseWriter, r *http.Request) error {
-		_ = Param(r, "id")
+		_ = server.Param(r, "id")
 		return nil
 	})
 
@@ -57,9 +58,9 @@ func BenchmarkRouter_ParamRoute(b *testing.B) {
 }
 
 func BenchmarkRouter_WildcardRoute(b *testing.B) {
-	router := NewRouter()
+	router := server.NewRouter()
 	router.GET("/files/*", func(w http.ResponseWriter, r *http.Request) error {
-		_ = Wildcard(r)
+		_ = server.Wildcard(r)
 		return nil
 	})
 
@@ -74,7 +75,7 @@ func BenchmarkRouter_WildcardRoute(b *testing.B) {
 }
 
 func BenchmarkRouter_DeepNesting(b *testing.B) {
-	router := NewRouter()
+	router := server.NewRouter()
 	router.GET("/a/b/c/d/e/f", func(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	})
@@ -90,7 +91,7 @@ func BenchmarkRouter_DeepNesting(b *testing.B) {
 }
 
 func BenchmarkRouter_NotFound(b *testing.B) {
-	router := NewRouter()
+	router := server.NewRouter()
 	router.GET("/api/users", func(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	})
@@ -106,7 +107,7 @@ func BenchmarkRouter_NotFound(b *testing.B) {
 }
 
 func BenchmarkRouter_ManyStaticRoutes(b *testing.B) {
-	router := NewRouter()
+	router := server.NewRouter()
 	routes := []string{
 		"/api/users", "/api/posts", "/api/comments", "/api/tags",
 		"/api/users/:id", "/api/posts/:id", "/api/comments/:id",
@@ -131,11 +132,11 @@ func BenchmarkRouter_ManyStaticRoutes(b *testing.B) {
 }
 
 func BenchmarkRouter_ParamLookup(b *testing.B) {
-	router := NewRouter()
+	router := server.NewRouter()
 	router.GET("/api/:version/:resource/:id", func(w http.ResponseWriter, r *http.Request) error {
-		_ = Param(r, "version")
-		_ = Param(r, "resource")
-		_ = Param(r, "id")
+		_ = server.Param(r, "version")
+		_ = server.Param(r, "resource")
+		_ = server.Param(r, "id")
 		return nil
 	})
 
@@ -159,7 +160,7 @@ func BenchmarkSplitRoute(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; b.Loop(); i++ {
-		_ = splitRouteFast(routes[i%len(routes)])
+		_ = server.SplitRouteFast(routes[i%len(routes)])
 	}
 }
 
@@ -176,9 +177,9 @@ func BenchmarkStringOps(b *testing.B) {
 }
 
 func BenchmarkRouter_WithMiddleware(b *testing.B) {
-	router := NewRouter()
+	router := server.NewRouter()
 
-	router.Use(func(next HandlerFunc) HandlerFunc {
+	router.Use(func(next server.HandlerFunc) server.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) error {
 			return next(w, r)
 		}
@@ -275,12 +276,12 @@ func BenchmarkValidation_RequiredJSONFieldsNestedArray(b *testing.B) {
 		Children []child `json:"children"`
 	}
 
-	required := requiredJSONFields(reflect.TypeFor[payload](), nil, nil)
+	required := server.RequiredJSONFields(reflect.TypeFor[payload](), nil, nil)
 	body := []byte(`{"children":[{"code":"AB"},{"code":"CD"},{"code":"EF"}]}`)
 
 	b.ReportAllocs()
 	for b.Loop() {
-		if err := validateRequiredJSONFields(body, required); err != nil {
+		if err := server.ValidateRequiredJSONFields(body, required); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -309,10 +310,10 @@ func BenchmarkValidation_StringLengthUnicode(b *testing.B) {
 }
 
 func BenchmarkRouter_WithMultipleMiddleware(b *testing.B) {
-	router := NewRouter()
+	router := server.NewRouter()
 
 	for range 3 {
-		router.Use(func(next HandlerFunc) HandlerFunc {
+		router.Use(func(next server.HandlerFunc) server.HandlerFunc {
 			return func(w http.ResponseWriter, r *http.Request) error {
 				return next(w, r)
 			}
@@ -334,7 +335,7 @@ func BenchmarkRouter_WithMultipleMiddleware(b *testing.B) {
 }
 
 func BenchmarkRouter_405MethodNotAllowed(b *testing.B) {
-	router := NewRouter()
+	router := server.NewRouter()
 	router.POST("/api/users", func(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	})
@@ -350,7 +351,7 @@ func BenchmarkRouter_405MethodNotAllowed(b *testing.B) {
 }
 
 func BenchmarkRouter_RootRoute(b *testing.B) {
-	router := NewRouter()
+	router := server.NewRouter()
 	router.GET("/", func(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	})
@@ -366,7 +367,7 @@ func BenchmarkRouter_RootRoute(b *testing.B) {
 }
 
 func BenchmarkRouter_GroupRouting(b *testing.B) {
-	router := NewRouter()
+	router := server.NewRouter()
 	g := router.Group("/api")
 	g.GET("/users", func(w http.ResponseWriter, r *http.Request) error {
 		return nil
@@ -386,12 +387,12 @@ func BenchmarkRouter_GroupRouting(b *testing.B) {
 }
 
 func BenchmarkRouter_MixedRoutes(b *testing.B) {
-	router := NewRouter()
+	router := server.NewRouter()
 
 	api := router.Group("/api/v1")
 	api.GET("/users", func(w http.ResponseWriter, r *http.Request) error { return nil })
 	api.GET("/users/:id", func(w http.ResponseWriter, r *http.Request) error {
-		_ = Param(r, "id")
+		_ = server.Param(r, "id")
 		return nil
 	})
 	api.POST("/users", func(w http.ResponseWriter, r *http.Request) error { return nil })
@@ -403,7 +404,7 @@ func BenchmarkRouter_MixedRoutes(b *testing.B) {
 
 	files := router.Group("/files")
 	files.GET("/*", func(w http.ResponseWriter, r *http.Request) error {
-		_ = Wildcard(r)
+		_ = server.Wildcard(r)
 		return nil
 	})
 
@@ -418,7 +419,7 @@ func BenchmarkRouter_MixedRoutes(b *testing.B) {
 }
 
 func BenchmarkRouter_LargePath(b *testing.B) {
-	router := NewRouter()
+	router := server.NewRouter()
 	router.GET("/api/v1/users/profile/settings/security/two-factor/enable", func(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	})
@@ -446,12 +447,12 @@ func BenchmarkHasPathTraversal(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; b.Loop(); i++ {
-		_ = hasPathTraversal(paths[i%len(paths)])
+		_ = server.HasPathTraversal(paths[i%len(paths)])
 	}
 }
 
 func BenchmarkTreeFind(b *testing.B) {
-	router := NewRouter()
+	router := server.NewRouter()
 	router.GET("/api/users", func(w http.ResponseWriter, r *http.Request) error { return nil })
 	router.GET("/api/users/:id", func(w http.ResponseWriter, r *http.Request) error { return nil })
 	router.GET("/api/posts/:id", func(w http.ResponseWriter, r *http.Request) error { return nil })
@@ -462,7 +463,7 @@ func BenchmarkTreeFind(b *testing.B) {
 	b.ReportAllocs()
 
 	for b.Loop() {
-		_ = router.root.find(http.MethodGet, path)
+		_ = router.Root.Find(http.MethodGet, path)
 	}
 }
 
@@ -480,12 +481,12 @@ func BenchmarkMethodIndex(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; b.Loop(); i++ {
-		_ = methodIndex(methods[i%len(methods)])
+		_ = server.MethodIndex(methods[i%len(methods)])
 	}
 }
 
 func BenchmarkRouter_RealisticAPI(b *testing.B) {
-	router := NewRouter()
+	router := server.NewRouter()
 
 	router.GET("/", func(w http.ResponseWriter, r *http.Request) error { return nil })
 	router.GET("/health", func(w http.ResponseWriter, r *http.Request) error { return nil })
@@ -494,34 +495,34 @@ func BenchmarkRouter_RealisticAPI(b *testing.B) {
 
 	api.GET("/users", func(w http.ResponseWriter, r *http.Request) error { return nil })
 	api.GET("/users/:id", func(w http.ResponseWriter, r *http.Request) error {
-		_ = Param(r, "id")
+		_ = server.Param(r, "id")
 		return nil
 	})
 	api.POST("/users", func(w http.ResponseWriter, r *http.Request) error { return nil })
 	api.PUT("/users/:id", func(w http.ResponseWriter, r *http.Request) error {
-		_ = Param(r, "id")
+		_ = server.Param(r, "id")
 		return nil
 	})
 	api.DELETE("/users/:id", func(w http.ResponseWriter, r *http.Request) error {
-		_ = Param(r, "id")
+		_ = server.Param(r, "id")
 		return nil
 	})
 
 	api.GET("/posts", func(w http.ResponseWriter, r *http.Request) error { return nil })
 	api.GET("/posts/:slug", func(w http.ResponseWriter, r *http.Request) error {
-		_ = Param(r, "slug")
+		_ = server.Param(r, "slug")
 		return nil
 	})
 	api.POST("/posts", func(w http.ResponseWriter, r *http.Request) error { return nil })
 
 	api.GET("/comments", func(w http.ResponseWriter, r *http.Request) error { return nil })
 	api.GET("/comments/:id", func(w http.ResponseWriter, r *http.Request) error {
-		_ = Param(r, "id")
+		_ = server.Param(r, "id")
 		return nil
 	})
 
 	api.GET("/files/*", func(w http.ResponseWriter, r *http.Request) error {
-		_ = Wildcard(r)
+		_ = server.Wildcard(r)
 		return nil
 	})
 

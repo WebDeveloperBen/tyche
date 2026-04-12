@@ -53,8 +53,8 @@ func generatedCodec(op Operation, inputType, outputType reflect.Type) (Generated
 	generatedCodecRegistry.mu.RLock()
 	defer generatedCodecRegistry.mu.RUnlock()
 
-	inputKey := generatedTypeKey(inputType)
-	outputKey := generatedTypeKey(outputType)
+	inputKey := GeneratedTypeKey(inputType)
+	outputKey := GeneratedTypeKey(outputType)
 	for _, entry := range generatedCodecRegistry.codecs {
 		if entry.meta.OperationID == op.OperationID &&
 			entry.meta.Method == op.Method &&
@@ -82,7 +82,7 @@ func WriteTypedResponse[O any](w http.ResponseWriter, out *O) error {
 	defer encoderBufPool.Put(buf)
 
 	enc := json.NewEncoder(buf)
-	if err := enc.Encode(out); err != nil {
+	if err := enc.Encode(DataResponse{Data: out}); err != nil {
 		return err
 	}
 

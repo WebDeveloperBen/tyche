@@ -167,13 +167,13 @@ func TestRateLimit(t *testing.T) {
 		}
 
 		var payload struct {
-			Error string `json:"error"`
+			Title string `json:"title"`
 		}
 		if err := json.Unmarshal(w.Body.Bytes(), &payload); err != nil {
-			t.Fatalf("expected JSON error response, got %v", err)
+			t.Fatalf("expected problem+json error response, got %v", err)
 		}
-		if payload.Error != "Too Many Requests" {
-			t.Errorf("expected 'Too Many Requests', got '%s'", payload.Error)
+		if payload.Title != "Too Many Requests" {
+			t.Errorf("expected title 'Too Many Requests', got '%s'", payload.Title)
 		}
 	})
 }
