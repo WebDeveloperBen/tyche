@@ -2,33 +2,18 @@ package server
 
 import (
 	"bufio"
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
-	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/webdeveloperben/tyche/server/openapi"
 	"github.com/webdeveloperben/tyche/server/validation"
 )
-
-var encoderBufPoolRouter = sync.Pool{
-	New: func() any {
-		return &bytes.Buffer{}
-	},
-}
-
-var validationErrorBufPool = sync.Pool{
-	New: func() any {
-		buf := make([]byte, 0, 512)
-		return &buf
-	},
-}
 
 var trackedResponseWriterPool = sync.Pool{
 	New: func() any {
@@ -109,13 +94,19 @@ func joinPath(prefix, pattern string) string {
 	return prefix + pattern
 }
 
-func (g *Group) GET(pattern string, fn HandlerFunc)     { g.Handle(http.MethodGet, pattern, fn) }
-func (g *Group) POST(pattern string, fn HandlerFunc)    { g.Handle(http.MethodPost, pattern, fn) }
-func (g *Group) PUT(pattern string, fn HandlerFunc)     { g.Handle(http.MethodPut, pattern, fn) }
-func (g *Group) DELETE(pattern string, fn HandlerFunc)  { g.Handle(http.MethodDelete, pattern, fn) }
-func (g *Group) PATCH(pattern string, fn HandlerFunc)   { g.Handle(http.MethodPatch, pattern, fn) }
+func (g *Group) GET(pattern string, fn HandlerFunc) { g.Handle(http.MethodGet, pattern, fn) }
+
+func (g *Group) POST(pattern string, fn HandlerFunc) { g.Handle(http.MethodPost, pattern, fn) }
+
+func (g *Group) PUT(pattern string, fn HandlerFunc) { g.Handle(http.MethodPut, pattern, fn) }
+
+func (g *Group) DELETE(pattern string, fn HandlerFunc) { g.Handle(http.MethodDelete, pattern, fn) }
+
+func (g *Group) PATCH(pattern string, fn HandlerFunc) { g.Handle(http.MethodPatch, pattern, fn) }
+
 func (g *Group) OPTIONS(pattern string, fn HandlerFunc) { g.Handle(http.MethodOptions, pattern, fn) }
-func (g *Group) HEAD(pattern string, fn HandlerFunc)    { g.Handle(http.MethodHead, pattern, fn) }
+
+func (g *Group) HEAD(pattern string, fn HandlerFunc) { g.Handle(http.MethodHead, pattern, fn) }
 
 type ServeHTTPMiddleware func(next http.Handler) http.Handler
 
@@ -278,10 +269,13 @@ func extractParams(pattern string) []string {
 }
 
 func (r *Router) GET(pattern string, fn HandlerFunc) { r.rootGroup.Handle(http.MethodGet, pattern, fn) }
+
 func (r *Router) POST(pattern string, fn HandlerFunc) {
 	r.rootGroup.Handle(http.MethodPost, pattern, fn)
 }
+
 func (r *Router) PUT(pattern string, fn HandlerFunc) { r.rootGroup.Handle(http.MethodPut, pattern, fn) }
+
 func (r *Router) DELETE(pattern string, fn HandlerFunc) {
 	r.rootGroup.Handle(http.MethodDelete, pattern, fn)
 }
@@ -304,11 +298,13 @@ func (r *Router) OpenAPIHandler() HandlerFunc {
 		if err != nil {
 			return err
 		}
+
 		w.Header().Set("Content-Type", "application/json")
 		if req.Method == http.MethodHead {
 			w.WriteHeader(http.StatusOK)
 			return nil
 		}
+
 		w.WriteHeader(http.StatusOK)
 		_, err = w.Write(body)
 		return err
@@ -320,21 +316,27 @@ func (r *Router) MountOpenAPI(path string) error {
 	if err := r.HandleE(http.MethodGet, path, handler); err != nil {
 		return err
 	}
+
 	return r.HandleE(http.MethodHead, path, handler)
 }
 
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	tracked := trackedResponseWriterPool.Get().(*trackedResponseWriter)
+
 	tracked.ResponseWriter = w
+
 	tracked.written = false
+
 	defer func() {
 		tracked.ResponseWriter = nil
 		trackedResponseWriterPool.Put(tracked)
 	}()
+
 	if len(r.serveHTTPMiddlewares) == 0 {
 		r.serveHTTP(tracked, req)
 		return
 	}
+
 	r.serveHTTPHandler.ServeHTTP(tracked, req)
 }
 
@@ -359,17 +361,20 @@ func (r *Router) serveHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 
 	handler := result.handler
+
 	paramValues := result.paramValues
 
 	newReq := req
 	if r.maxRequestBodyBytes > 0 && req.Body != nil && req.Body != http.NoBody {
 		req.Body = http.MaxBytesReader(w, req.Body, r.maxRequestBodyBytes)
 	}
+
 	if len(paramValues) > 0 {
 		for i, value := range paramValues {
 			req.SetPathValue(handler.params[len(handler.params)-1-i], value)
 		}
 	}
+
 	if result.hasWildcard {
 		req.SetPathValue("*", result.wildcard)
 		if handler.wildcard != "" {
