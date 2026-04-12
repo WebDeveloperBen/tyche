@@ -1,9 +1,11 @@
-package server
+package server_test
 
 import (
 	"context"
 	"net/http"
 	"testing"
+
+	"github.com/webdeveloperben/tyche/server"
 )
 
 type setupInput struct {
@@ -15,24 +17,24 @@ type setupOutput struct {
 }
 
 func registerSetupTestCodecs() {
-	RegisterGeneratedCodec(GeneratedRouteMeta{
+	server.RegisterGeneratedCodec(server.GeneratedRouteMeta{
 		PackagePath:       "github.com/webdeveloperben/tyche/server",
 		OperationID:       "dup",
 		Method:            http.MethodGet,
 		Path:              "/users/:id",
 		HasGeneratedCodec: true,
-	}, GeneratedRouteCodec{
+	}, server.GeneratedRouteCodec{
 		Parse: func(req *http.Request) (any, error) {
 			return &setupInput{ID: req.PathValue("id")}, nil
 		},
 		Write: func(w http.ResponseWriter, req *http.Request, out any) error {
-			return WriteJSON(w, http.StatusOK, out)
+			return server.WriteJSON(w, http.StatusOK, out)
 		},
 	})
 }
 
 func TestHandleE_ReturnsErrorForInvalidPath(t *testing.T) {
-	router := NewRouter()
+	router := server.NewRouter()
 	if err := router.HandleE(http.MethodGet, "users", func(w http.ResponseWriter, r *http.Request) error { return nil }); err == nil {
 		t.Fatal("expected invalid path error")
 	}
@@ -40,10 +42,10 @@ func TestHandleE_ReturnsErrorForInvalidPath(t *testing.T) {
 
 func TestRegisterE_ReturnsErrorForDuplicateOperationID(t *testing.T) {
 	registerSetupTestCodecs()
-	router := NewRouter()
+	router := server.NewRouter()
 	api := router.Group("/api")
 
-	err := RegisterE(api, Operation{
+	err := server.RegisterE(api, server.Operation{
 		OperationID: "dup",
 		Method:      http.MethodGet,
 		Path:        "/users/:id",
@@ -54,7 +56,7 @@ func TestRegisterE_ReturnsErrorForDuplicateOperationID(t *testing.T) {
 		t.Fatalf("expected first registration to succeed, got %v", err)
 	}
 
-	err = RegisterE(api, Operation{
+	err = server.RegisterE(api, server.Operation{
 		OperationID: "dup",
 		Method:      http.MethodGet,
 		Path:        "/users/:id",

@@ -69,7 +69,7 @@ func registerTypedTestCodecs() {
 					w.WriteHeader(http.StatusOK)
 					return nil
 				}
-				return server.WriteJSON(w, http.StatusOK, typed)
+				return server.WriteSuccess(w, http.StatusOK, typed)
 			},
 		})
 		server.RegisterGeneratedCodec(server.GeneratedRouteMeta{
@@ -87,7 +87,7 @@ func registerTypedTestCodecs() {
 				return &in, nil
 			},
 			Write: func(w http.ResponseWriter, req *http.Request, out any) error {
-				return server.WriteJSON(w, http.StatusOK, out)
+				return server.WriteSuccess(w, http.StatusOK, out)
 			},
 		})
 		server.RegisterGeneratedCodec(server.GeneratedRouteMeta{
@@ -111,7 +111,7 @@ func registerTypedTestCodecs() {
 					w.WriteHeader(http.StatusCreated)
 					return nil
 				}
-				return server.WriteJSON(w, http.StatusCreated, typed.Body)
+				return server.WriteSuccess(w, http.StatusCreated, typed.Body)
 			},
 		})
 		server.RegisterGeneratedCodec(server.GeneratedRouteMeta{
@@ -134,7 +134,7 @@ func registerTypedTestCodecs() {
 					w.WriteHeader(http.StatusCreated)
 					return nil
 				}
-				return server.WriteJSON(w, http.StatusCreated, typed.Body)
+				return server.WriteSuccess(w, http.StatusCreated, typed.Body)
 			},
 		})
 		server.RegisterGeneratedCodec(server.GeneratedRouteMeta{
@@ -157,7 +157,7 @@ func registerTypedTestCodecs() {
 					w.WriteHeader(http.StatusOK)
 					return nil
 				}
-				return server.WriteJSON(w, http.StatusOK, typed.Body)
+				return server.WriteSuccess(w, http.StatusOK, typed.Body)
 			},
 		})
 		server.RegisterGeneratedCodec(server.GeneratedRouteMeta{
@@ -172,7 +172,7 @@ func registerTypedTestCodecs() {
 			},
 			Write: func(w http.ResponseWriter, req *http.Request, out any) error {
 				typed, _ := out.(*getUserOutput)
-				return server.WriteJSON(w, http.StatusOK, typed)
+				return server.WriteSuccess(w, http.StatusOK, typed)
 			},
 		})
 		server.RegisterGeneratedCodec(server.GeneratedRouteMeta{
@@ -202,7 +202,7 @@ func registerTypedTestCodecs() {
 			},
 			Write: func(w http.ResponseWriter, req *http.Request, out any) error {
 				typed, _ := out.(*getUserOutput)
-				return server.WriteJSON(w, http.StatusOK, typed)
+				return server.WriteSuccess(w, http.StatusOK, typed)
 			},
 		})
 		server.RegisterGeneratedCodec(server.GeneratedRouteMeta{
@@ -217,7 +217,7 @@ func registerTypedTestCodecs() {
 			},
 			Write: func(w http.ResponseWriter, req *http.Request, out any) error {
 				typed, _ := out.(*getUserOutput)
-				return server.WriteJSON(w, http.StatusOK, typed)
+				return server.WriteSuccess(w, http.StatusOK, typed)
 			},
 		})
 	})
@@ -429,12 +429,14 @@ func TestRegister_Integration(t *testing.T) {
 			t.Fatalf("expected status 200, got %d", w.Code)
 		}
 
-		var resp getUserOutput
+		var resp struct {
+			Data getUserOutput `json:"data"`
+		}
 		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 			t.Fatalf("failed to unmarshal response: %v", err)
 		}
-		if resp.Name != "Test User" {
-			t.Fatalf("expected name 'Test User', got %q", resp.Name)
+		if resp.Data.Name != "Test User" {
+			t.Fatalf("expected name 'Test User', got %q", resp.Data.Name)
 		}
 	})
 
@@ -448,12 +450,14 @@ func TestRegister_Integration(t *testing.T) {
 			t.Fatalf("expected status 200, got %d", w.Code)
 		}
 
-		var resp createUserOutput
+		var resp struct {
+			Data createUserOutput `json:"data"`
+		}
 		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 			t.Fatalf("failed to unmarshal response: %v", err)
 		}
-		if resp.Name != "John" {
-			t.Fatalf("expected name 'John', got %q", resp.Name)
+		if resp.Data.Name != "John" {
+			t.Fatalf("expected name 'John', got %q", resp.Data.Name)
 		}
 	})
 
@@ -471,13 +475,15 @@ func TestRegister_Integration(t *testing.T) {
 		}
 
 		var resp struct {
-			ID string `json:"id"`
+			Data struct {
+				ID string `json:"id"`
+			} `json:"data"`
 		}
 		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 			t.Fatalf("failed to unmarshal wrapped response: %v", err)
 		}
-		if resp.ID != "created-123" {
-			t.Fatalf("expected wrapped body id, got %q", resp.ID)
+		if resp.Data.ID != "created-123" {
+			t.Fatalf("expected wrapped body id, got %q", resp.Data.ID)
 		}
 	})
 
@@ -612,30 +618,30 @@ func TestRegister_ErrorResponseMatchesOpenAPIContract(t *testing.T) {
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
-	if got := w.Header().Get("Content-Type"); !strings.Contains(got, "application/json") {
-		t.Fatalf("expected JSON error response, got %q", got)
+	if got := w.Header().Get("Content-Type"); got != "application/problem+json" {
+		t.Fatalf("expected problem+json error response, got %q", got)
 	}
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected status 400, got %d", w.Code)
 	}
 
 	var payload struct {
-		Error string `json:"error"`
+		Detail string `json:"detail"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("failed to decode error response: %v", err)
 	}
-	if payload.Error != "bad user" {
-		t.Fatalf("expected error payload, got %#v", payload)
+	if payload.Detail != "bad user" {
+		t.Fatalf("expected error detail, got %#v", payload)
 	}
 
 	spec := router.OpenAPI()
 	defaultResp := spec.Paths["/api/users/{id}"].GET.Responses["default"]
-	if defaultResp == nil || defaultResp.Content["application/json"] == nil {
-		t.Fatal("expected OpenAPI default JSON error response")
+	if defaultResp == nil || defaultResp.Content["application/problem+json"] == nil {
+		t.Fatal("expected OpenAPI default error response")
 	}
-	if defaultResp.Content["application/json"].Schema.Properties["error"] == nil {
-		t.Fatal("expected OpenAPI error schema to include error field")
+	if defaultResp.Content["application/problem+json"].Schema.Properties["title"] == nil {
+		t.Fatal("expected OpenAPI error schema to include title field")
 	}
 }
 
@@ -668,7 +674,7 @@ func TestParseRequest_EnforcesRouterBodyLimit(t *testing.T) {
 		},
 		Write: func(w http.ResponseWriter, req *http.Request, out any) error {
 			typed, _ := out.(*output)
-			return server.WriteJSON(w, http.StatusOK, typed.Body)
+			return server.WriteSuccess(w, http.StatusOK, typed.Body)
 		},
 	})
 
@@ -692,12 +698,12 @@ func TestParseRequest_EnforcesRouterBodyLimit(t *testing.T) {
 	}
 
 	var payload struct {
-		Error string `json:"error"`
+		Detail string `json:"detail"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("failed to decode body limit error: %v", err)
 	}
-	if !strings.Contains(payload.Error, "request body too large") {
+	if !strings.Contains(payload.Detail, "request body too large") {
 		t.Fatalf("expected body limit error, got %#v", payload)
 	}
 }

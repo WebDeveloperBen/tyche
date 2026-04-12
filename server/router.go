@@ -8,12 +8,20 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/webdeveloperben/tyche/server/openapi"
 	"github.com/webdeveloperben/tyche/server/validation"
 )
+
+var validationErrorBufPool = sync.Pool{
+	New: func() any {
+		buf := make([]byte, 0, 512)
+		return &buf
+	},
+}
 
 var trackedResponseWriterPool = sync.Pool{
 	New: func() any {
@@ -123,7 +131,7 @@ type RouterConfig struct {
 }
 
 type Router struct {
-	root                   *node
+	Root                   *node
 	rootGroup              *Group
 	notFound               http.Handler
 	serveHTTPMiddlewares   []ServeHTTPMiddleware
@@ -152,7 +160,7 @@ func NewRouterWithConfig(cfg RouterConfig) *Router {
 	merged = mergeRouterConfig(merged, cfg)
 
 	r := &Router{
-		root:                   &node{part: "/"},
+		Root:                   &node{part: "/"},
 		notFound:               http.HandlerFunc(http.NotFound),
 		openapiDoc:             openapi.NewOpenAPI(merged.OpenAPI.Title, merged.OpenAPI.Version),
 		schemaRegistry:         openapi.NewRegistry("#/components/schemas"),
@@ -217,7 +225,7 @@ func (r *Router) handle(pattern, method string, fn HandlerFunc, g *Group) error 
 	if !strings.HasPrefix(pattern, "/") {
 		return fmt.Errorf("path must start with /: %s", pattern)
 	}
-	if methodIndex(method) < 0 {
+	if MethodIndex(method) < 0 {
 		return fmt.Errorf("unsupported method: %s", method)
 	}
 	if err := validateRoutePattern(pattern); err != nil {
@@ -225,7 +233,7 @@ func (r *Router) handle(pattern, method string, fn HandlerFunc, g *Group) error 
 	}
 
 	params := extractParams(pattern)
-	routeNode := r.root.addRoute(pattern)
+	routeNode := r.Root.addRoute(pattern)
 	if err := routeNode.setHandler(method, pattern, fn, params, routeNode.wcName, g, r.wrapHandler(fn, g)); err != nil {
 		return err
 	}
@@ -233,7 +241,7 @@ func (r *Router) handle(pattern, method string, fn HandlerFunc, g *Group) error 
 }
 
 func validateRoutePattern(pattern string) error {
-	parts := splitRouteFast(pattern)
+	parts := SplitRouteFast(pattern)
 	for i, part := range parts {
 		if len(part) == 0 || part[0] != '*' {
 			continue
@@ -245,7 +253,7 @@ func validateRoutePattern(pattern string) error {
 	return nil
 }
 
-func hasPathTraversal(path string) bool {
+func HasPathTraversal(path string) bool {
 	for i := 0; i < len(path); i++ {
 		if path[i] == '.' && i+1 < len(path) && path[i+1] == '.' {
 			if i == 0 || path[i-1] == '/' {
@@ -260,7 +268,7 @@ func hasPathTraversal(path string) bool {
 
 func extractParams(pattern string) []string {
 	var params []string
-	for _, part := range splitRouteFast(pattern) {
+	for _, part := range SplitRouteFast(pattern) {
 		if len(part) > 0 && part[0] == ':' {
 			params = append(params, part[1:])
 		}
@@ -343,12 +351,12 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 func (r *Router) serveHTTP(w http.ResponseWriter, req *http.Request) {
 	path := req.URL.Path
 
-	if hasPathTraversal(path) {
+	if HasPathTraversal(path) {
 		handleHTTPError(w, NewHTTPError(http.StatusBadRequest, "Path traversal not allowed"))
 		return
 	}
 
-	result := r.root.find(req.Method, path)
+	result := r.Root.Find(req.Method, path)
 
 	if !result.routeExists {
 		r.notFound.ServeHTTP(w, req)
@@ -445,8 +453,31 @@ func Wildcard(req *http.Request) string {
 	return Param(req, "*")
 }
 
+type problemDetails struct {
+	Type   string `json:"type"`
+	Status int    `json:"status"`
+	Title  string `json:"title"`
+	Detail string `json:"detail,omitempty"`
+}
+
+func writeProblemJSON(w http.ResponseWriter, statusCode int, body any) {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(statusCode)
+	data, _ := json.Marshal(body)
+	_, _ = w.Write(data)
+}
+
 func writeErrorJSON(w http.ResponseWriter, statusCode int, message string) {
-	_ = WriteJSON(w, statusCode, map[string]string{"error": message})
+	title := http.StatusText(statusCode)
+	p := problemDetails{
+		Type:   "about:blank",
+		Status: statusCode,
+		Title:  title,
+	}
+	if message != title {
+		p.Detail = message
+	}
+	writeProblemJSON(w, statusCode, p)
 }
 
 func writeValidationProblemJSON(w http.ResponseWriter, statusCode int, err *validation.Error) {
@@ -471,14 +502,14 @@ func writeValidationProblemJSON(w http.ResponseWriter, statusCode int, err *vali
 			*buf = strconv.AppendQuote(*buf, prob.Code)
 			*buf = append(*buf, `,"message":`...)
 			*buf = strconv.AppendQuote(*buf, prob.Message)
-			*buf = append(*buf, '}', '}')
+			*buf = append(*buf, '}')
 		}
 		*buf = append(*buf, ']')
 	}
 	*buf = append(*buf, '}')
-	w.Write(*buf)
+	_, _ = w.Write(*buf)
 	if cap(*buf) > 4096 {
-		*buf = make([]byte, 0, 256)
+		*buf = make([]byte, 0, 512)
 	}
 	validationErrorBufPool.Put(buf)
 }
@@ -542,7 +573,7 @@ func (r *Router) wrapHandler(fn HandlerFunc, g *Group) HandlerFunc {
 }
 
 func (r *Router) rebuildHandlers() {
-	r.root.rebuildHandlers(func(handler *routeHandler) HandlerFunc {
+	r.Root.rebuildHandlers(func(handler *routeHandler) HandlerFunc {
 		return r.wrapHandler(handler.fn, handler.group)
 	})
 }

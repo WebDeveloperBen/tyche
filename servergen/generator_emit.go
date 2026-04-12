@@ -211,7 +211,7 @@ func writeDecodedBodyAssignments(buf *bytes.Buffer, fields []BodyFieldSpec, sour
 }
 
 func writeStrictWholeBodyParse(buf *bytes.Buffer, body *BodyBindSpec) {
-	required := requiredJSONFieldsForBodySpec(body)
+	required := RequiredJSONFieldsForBodySpec(body)
 	buf.WriteString("\t\t\tif err := serverpkg.DecodeRequestJSONBodyStrictFast(req, &" + body.DecodeTarget + ", " + strconv.FormatBool(body.Required) + ", ")
 	writeRequiredJSONFieldsLiteral(buf, required)
 	buf.WriteString("); err != nil { return nil, err }\n")
@@ -432,7 +432,7 @@ func bodyHasValidationRules(body *BodyBindSpec) bool {
 	return false
 }
 
-func requiredJSONFieldsForBodySpec(body *BodyBindSpec) []BodyRequiredFieldSpec {
+func RequiredJSONFieldsForBodySpec(body *BodyBindSpec) []BodyRequiredFieldSpec {
 	if body == nil || body.Direct != nil {
 		return nil
 	}

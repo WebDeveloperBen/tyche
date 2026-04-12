@@ -1,7 +1,8 @@
 //go:build comparison
 // +build comparison
 
-package server
+// go:build comparison
+package server_test
 
 import (
 	"bytes"
@@ -20,6 +21,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-playground/validator/v10"
+	"github.com/webdeveloperben/tyche/server"
 )
 
 type compInput struct {
@@ -66,17 +68,21 @@ type humaCompNestedOutput struct {
 	Body compNestedOutput
 }
 
-var compBody = []byte(`{"name":"Ben","email":"ben@example.com","age":30}`)
-var compNestedBody = []byte(`{"name":"Test","metadata":{"key":"value"},"tags":["a","b"]}`)
+var (
+	compBody       = []byte(`{"name":"Ben","email":"ben@example.com","age":30}`)
+	compNestedBody = []byte(`{"name":"Test","metadata":{"key":"value"},"tags":["a","b"]}`)
+)
 
-var structValidator = validator.New()
-var compBenchmarkSetupOnce sync.Once
-var compJSONBufPool = sync.Pool{
-	New: func() any {
-		buf := make([]byte, 0, 128)
-		return &buf
-	},
-}
+var (
+	structValidator        = validator.New()
+	compBenchmarkSetupOnce sync.Once
+	compJSONBufPool        = sync.Pool{
+		New: func() any {
+			buf := make([]byte, 0, 128)
+			return &buf
+		},
+	}
+)
 
 var compNestedSuccessJSON = []byte("{\"success\":true}")
 
@@ -84,10 +90,10 @@ func compBenchmarkSetup() {
 	compBenchmarkSetupOnce.Do(func() {
 		inputType := reflect.TypeOf(compInput{})
 		outputType := reflect.TypeOf(compOutput{})
-		inputKey := generatedTypeKey(inputType)
-		outputKey := generatedTypeKey(outputType)
+		inputKey := server.GeneratedTypeKey(inputType)
+		outputKey := server.GeneratedTypeKey(outputType)
 
-		RegisterGeneratedCodec(GeneratedRouteMeta{
+		server.RegisterGeneratedCodec(server.GeneratedRouteMeta{
 			PackagePath:       "github.com/webdeveloperben/tyche/server",
 			OperationID:       "comp-static",
 			Method:            http.MethodGet,
@@ -95,7 +101,7 @@ func compBenchmarkSetup() {
 			InputTypeKey:      inputKey,
 			OutputTypeKey:     outputKey,
 			HasGeneratedCodec: true,
-		}, GeneratedRouteCodec{
+		}, server.GeneratedRouteCodec{
 			Parse: func(req *http.Request) (any, error) { return &compInput{}, nil },
 			Write: func(w http.ResponseWriter, req *http.Request, out any) error {
 				t, _ := out.(*compOutput)
@@ -103,7 +109,7 @@ func compBenchmarkSetup() {
 			},
 		})
 
-		RegisterGeneratedCodec(GeneratedRouteMeta{
+		server.RegisterGeneratedCodec(server.GeneratedRouteMeta{
 			PackagePath:       "github.com/webdeveloperben/tyche/server",
 			OperationID:       "comp-param",
 			Method:            http.MethodGet,
@@ -111,9 +117,9 @@ func compBenchmarkSetup() {
 			InputTypeKey:      inputKey,
 			OutputTypeKey:     outputKey,
 			HasGeneratedCodec: true,
-		}, GeneratedRouteCodec{
+		}, server.GeneratedRouteCodec{
 			Parse: func(req *http.Request) (any, error) {
-				return &compInput{ID: Param(req, "id")}, nil
+				return &compInput{ID: server.Param(req, "id")}, nil
 			},
 			Write: func(w http.ResponseWriter, req *http.Request, out any) error {
 				t, _ := out.(*compOutput)
@@ -121,7 +127,7 @@ func compBenchmarkSetup() {
 			},
 		})
 
-		RegisterGeneratedCodec(GeneratedRouteMeta{
+		server.RegisterGeneratedCodec(server.GeneratedRouteMeta{
 			PackagePath:       "github.com/webdeveloperben/tyche/server",
 			OperationID:       "comp-body",
 			Method:            http.MethodPost,
@@ -129,10 +135,10 @@ func compBenchmarkSetup() {
 			InputTypeKey:      inputKey,
 			OutputTypeKey:     outputKey,
 			HasGeneratedCodec: true,
-		}, GeneratedRouteCodec{
+		}, server.GeneratedRouteCodec{
 			Parse: func(req *http.Request) (any, error) {
 				var in compInput
-				if err := DecodeRequestJSONBodyFast(req, &in); err != nil {
+				if err := server.DecodeRequestJSONBodyFast(req, &in); err != nil {
 					return nil, err
 				}
 				return &in, nil
@@ -146,10 +152,10 @@ func compBenchmarkSetup() {
 		// Nested - JSON parse with nested objects
 		nestedInputType := reflect.TypeOf(compNestedInput{})
 		nestedOutputType := reflect.TypeOf(compNestedOutput{})
-		nestedInputKey := generatedTypeKey(nestedInputType)
-		nestedOutputKey := generatedTypeKey(nestedOutputType)
+		nestedInputKey := server.GeneratedTypeKey(nestedInputType)
+		nestedOutputKey := server.GeneratedTypeKey(nestedOutputType)
 
-		RegisterGeneratedCodec(GeneratedRouteMeta{
+		server.RegisterGeneratedCodec(server.GeneratedRouteMeta{
 			PackagePath:       "github.com/webdeveloperben/tyche/server",
 			OperationID:       "comp-nested",
 			Method:            http.MethodPost,
@@ -157,15 +163,15 @@ func compBenchmarkSetup() {
 			InputTypeKey:      nestedInputKey,
 			OutputTypeKey:     nestedOutputKey,
 			HasGeneratedCodec: true,
-		}, GeneratedRouteCodec{
+		}, server.GeneratedRouteCodec{
 			Parse: func(req *http.Request) (any, error) {
 				var in compNestedInput
-				if err := DecodeRequestJSONBodyFast(req, &in); err != nil {
+				if err := server.DecodeRequestJSONBodyFast(req, &in); err != nil {
 					return nil, err
 				}
 				// Manual validation like Chi/Gin do
 				if in.Name == "" {
-					return nil, NewHTTPError(400, "name required")
+					return nil, server.NewHTTPError(400, "name required")
 				}
 				return &in, nil
 			},
@@ -212,20 +218,20 @@ func writeCompNestedOutputResponse(w http.ResponseWriter, out *compNestedOutput)
 	return err
 }
 
-func compBenchmarkRouter() *Router {
+func compBenchmarkRouter() *server.Router {
 	compBenchmarkSetup()
-	r := NewRouter()
+	r := server.NewRouter()
 	g := r.Group("/comp")
-	Register(g, Operation{OperationID: "comp-static", Method: http.MethodGet, Path: "/static"}, func(c context.Context, i *compInput) (*compOutput, error) {
+	server.Register(g, server.Operation{OperationID: "comp-static", Method: http.MethodGet, Path: "/static"}, func(c context.Context, i *compInput) (*compOutput, error) {
 		return &compOutput{ID: "1", Name: "Ben", Email: "ben@example.com", Age: 30}, nil
 	})
-	Register(g, Operation{OperationID: "comp-param", Method: http.MethodGet, Path: "/param/:id"}, func(c context.Context, i *compInput) (*compOutput, error) {
+	server.Register(g, server.Operation{OperationID: "comp-param", Method: http.MethodGet, Path: "/param/:id"}, func(c context.Context, i *compInput) (*compOutput, error) {
 		return &compOutput{ID: i.ID, Name: "Ben", Email: "ben@example.com", Age: 30}, nil
 	})
-	Register(g, Operation{OperationID: "comp-body", Method: http.MethodPost, Path: "/body"}, func(c context.Context, i *compInput) (*compOutput, error) {
+	server.Register(g, server.Operation{OperationID: "comp-body", Method: http.MethodPost, Path: "/body"}, func(c context.Context, i *compInput) (*compOutput, error) {
 		return &compOutput{ID: "new", Name: i.Name, Email: i.Email, Age: i.Age}, nil
 	})
-	Register(g, Operation{OperationID: "comp-nested", Method: http.MethodPost, Path: "/nested"}, func(c context.Context, i *compNestedInput) (*compNestedOutput, error) {
+	server.Register(g, server.Operation{OperationID: "comp-nested", Method: http.MethodPost, Path: "/nested"}, func(c context.Context, i *compNestedInput) (*compNestedOutput, error) {
 		return &compNestedOutput{Success: true}, nil
 	})
 	return r
