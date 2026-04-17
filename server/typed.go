@@ -295,19 +295,37 @@ func ParseRequest[I any](req *http.Request) (*I, error) {
 	validationErr := &validation.Error{}
 
 	for _, binding := range spec.bindings {
-		raw, ok, err := binding.read(req)
-		if err != nil {
-			return nil, err
-		}
-		if !ok {
-			if binding.required {
-				validationErr.AddRequired(validation.JSONPointer(binding.source, binding.name))
+		if binding.readSlice != nil {
+			values, ok, err := binding.readSlice(req)
+			if err != nil {
+				return nil, err
 			}
-			continue
-		}
+			if !ok {
+				if binding.required {
+					validationErr.AddRequired(validation.JSONPointer(binding.source, binding.name))
+				}
+				continue
+			}
+			if binding.setSlice != nil {
+				if err := binding.setSlice(target.Field(binding.index), values); err != nil {
+					validationErr.AddInvalidType(validation.JSONPointer(binding.source, binding.name))
+				}
+			}
+		} else if binding.read != nil {
+			raw, ok, err := binding.read(req)
+			if err != nil {
+				return nil, err
+			}
+			if !ok {
+				if binding.required {
+					validationErr.AddRequired(validation.JSONPointer(binding.source, binding.name))
+				}
+				continue
+			}
 
-		if err := binding.set(target.Field(binding.index), raw); err != nil {
-			validationErr.AddInvalidType(validation.JSONPointer(binding.source, binding.name))
+			if err := binding.set(target.Field(binding.index), raw); err != nil {
+				validationErr.AddInvalidType(validation.JSONPointer(binding.source, binding.name))
+			}
 		}
 	}
 	if !validationErr.Empty() {
@@ -354,13 +372,15 @@ func WriteSuccess(w http.ResponseWriter, status int, data any) error {
 }
 
 type inputBinding struct {
-	index    int
-	name     string
-	location string
-	source   string
-	required bool
-	read     func(*http.Request) (string, bool, error)
-	set      func(reflect.Value, string) error
+	index     int
+	name      string
+	location  string
+	source    string
+	required  bool
+	read      func(*http.Request) (string, bool, error)
+	readSlice func(*http.Request) ([]string, bool, error)
+	set       func(reflect.Value, string) error
+	setSlice  func(reflect.Value, []string) error
 }
 
 type bodyBindingMode uint8
@@ -436,21 +456,52 @@ func inputSpecForType(t reflect.Type) *inputSpec {
 			})
 		case f.Tag.Get("query") != "":
 			name := validation.TagName(f.Tag.Get("query"))
-			spec.bindings = append(spec.bindings, inputBinding{
-				index:    i,
-				name:     name,
-				location: "query parameter",
-				source:   "query",
-				required: validation.FieldRequired(f, "query"),
-				read: func(req *http.Request) (string, bool, error) {
-					values, ok := req.URL.Query()[name]
-					if !ok || len(values) == 0 {
-						return "", false, nil
-					}
-					return values[0], true, nil
-				},
-				set: setStringValue,
-			})
+			ft := validation.IndirectType(f.Type)
+			if ft.Kind() == reflect.Slice && ft.Elem().Kind() == reflect.String {
+				spec.bindings = append(spec.bindings, inputBinding{
+					index:    i,
+					name:     name,
+					location: "query parameter",
+					source:   "query",
+					required: validation.FieldRequired(f, "query"),
+					readSlice: func(req *http.Request) ([]string, bool, error) {
+						values, ok := req.URL.Query()[name]
+						if !ok || len(values) == 0 {
+							return nil, false, nil
+						}
+						return values, true, nil
+					},
+					setSlice: func(v reflect.Value, values []string) error {
+						if v.Kind() != reflect.Slice {
+							return fmt.Errorf("expected slice, got %s", v.Type())
+						}
+						for _, val := range values {
+							elem := reflect.New(v.Type().Elem())
+							if err := setStringValue(elem, val); err != nil {
+								return err
+							}
+							v.Set(reflect.Append(v, elem.Elem()))
+						}
+						return nil
+					},
+				})
+			} else {
+				spec.bindings = append(spec.bindings, inputBinding{
+					index:    i,
+					name:     name,
+					location: "query parameter",
+					source:   "query",
+					required: validation.FieldRequired(f, "query"),
+					read: func(req *http.Request) (string, bool, error) {
+						values, ok := req.URL.Query()[name]
+						if !ok || len(values) == 0 {
+							return "", false, nil
+						}
+						return values[0], true, nil
+					},
+					set: setStringValue,
+				})
+			}
 		case f.Tag.Get("header") != "":
 			name := validation.TagName(f.Tag.Get("header"))
 			spec.bindings = append(spec.bindings, inputBinding{
@@ -510,6 +561,10 @@ func inputSpecForType(t reflect.Type) *inputSpec {
 func decodeRequestBody(req *http.Request, target reflect.Value, spec *inputSpec) error {
 	bodyBytes, err := readJSONBody(req)
 	if err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			return fmt.Errorf("request body too large on %s %s: limit is %d bytes", req.Method, req.URL.Path, maxBytesErr.Limit)
+		}
 		return err
 	}
 	if len(bodyBytes) == 0 {
@@ -603,7 +658,7 @@ func ReadRequestJSONBody(req *http.Request) ([]byte, error) {
 	if err != nil {
 		var maxBytesErr *http.MaxBytesError
 		if errors.As(err, &maxBytesErr) {
-			return nil, fmt.Errorf("request body too large: limit is %d bytes", maxBytesErr.Limit)
+			return nil, fmt.Errorf("request body too large on %s %s: limit is %d bytes", req.Method, req.URL.Path, maxBytesErr.Limit)
 		}
 		return nil, fmt.Errorf("failed to read body: %w", err)
 	}
@@ -624,7 +679,7 @@ func ReadRequestJSONBodyFast(req *http.Request) ([]byte, error) {
 	if err != nil {
 		var maxBytesErr *http.MaxBytesError
 		if errors.As(err, &maxBytesErr) {
-			return nil, fmt.Errorf("request body too large: limit is %d bytes", maxBytesErr.Limit)
+			return nil, fmt.Errorf("request body too large on %s %s: limit is %d bytes", req.Method, req.URL.Path, maxBytesErr.Limit)
 		}
 		return nil, fmt.Errorf("failed to read body: %w", err)
 	}
@@ -651,7 +706,7 @@ func DecodeRequestJSONBodyFast(req *http.Request, dst any) error {
 	if _, err := buf.ReadFrom(req.Body); err != nil {
 		var maxBytesErr *http.MaxBytesError
 		if errors.As(err, &maxBytesErr) {
-			return fmt.Errorf("request body too large: limit is %d bytes", maxBytesErr.Limit)
+			return fmt.Errorf("request body too large on %s %s: limit is %d bytes", req.Method, req.URL.Path, maxBytesErr.Limit)
 		}
 		return fmt.Errorf("failed to read body: %w", err)
 	}
@@ -687,7 +742,7 @@ func DecodeRequestJSONBodyStrictFast(req *http.Request, dst any, bodyRequired bo
 	if _, err := buf.ReadFrom(req.Body); err != nil {
 		var maxBytesErr *http.MaxBytesError
 		if errors.As(err, &maxBytesErr) {
-			return fmt.Errorf("request body too large: limit is %d bytes", maxBytesErr.Limit)
+			return fmt.Errorf("request body too large on %s %s: limit is %d bytes", req.Method, req.URL.Path, maxBytesErr.Limit)
 		}
 		return fmt.Errorf("failed to read body: %w", err)
 	}
