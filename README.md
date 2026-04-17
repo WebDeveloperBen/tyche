@@ -26,13 +26,11 @@ router := server.NewRouterWithConfig(server.RouterConfig{
 
 api := router.Group("/api")
 
-if err := server.RegisterE(api, server.Operation{
+server.Register(api, server.Operation{
 	OperationID: "get-user",
 	Method:      http.MethodGet,
 	Path:        "/users/:id",
-}, getUserHandler); err != nil {
-	return err
-}
+}, getUserHandler)
 
 if err := apidocs.Mount(router, apidocs.Config{
 	SpecPath: "/openapi.json",
