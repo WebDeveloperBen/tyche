@@ -1,6 +1,7 @@
 package plugins
 
 import (
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -114,6 +115,10 @@ func newCORS(c CORSConfig) *corsMiddleware {
 
 	if len(c.ExposedHeaders) > 0 {
 		m.exposedHeaders = strings.Join(canonicalHeaders(c.ExposedHeaders), ", ")
+	}
+
+	if m.allowOriginsAll && c.AllowCredentials {
+		slog.Warn("CORS: wildcard origin with AllowCredentials echoes request origin instead of sending '*'; credentials require specific origin")
 	}
 
 	return m

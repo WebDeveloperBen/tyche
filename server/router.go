@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"strconv"
@@ -419,6 +420,10 @@ func handleHTTPError(w http.ResponseWriter, err error) {
 	}
 	if httpErr, ok := err.(HTTPError); ok {
 		if httpErr.Silent {
+			slog.Debug("server: silent HTTP error suppressed",
+				"status", httpErr.StatusCode,
+				"message", httpErr.Message,
+			)
 			return
 		}
 		if wc, ok := w.(writtenChecker); ok && wc.Written() {
@@ -618,18 +623,13 @@ func (g *Group) middlewareChain() []Middleware {
 	if g == nil {
 		return nil
 	}
-	var lineage []*Group
-	for current := g; current != nil; current = current.parent {
-		lineage = append(lineage, current)
+	var parentChain []Middleware
+	if g.parent != nil {
+		parentChain = g.parent.middlewareChain()
 	}
-	var total int
-	for _, group := range lineage {
-		total += len(group.stack)
-	}
-	chain := make([]Middleware, 0, total)
-	for i := len(lineage) - 1; i >= 0; i-- {
-		chain = append(chain, lineage[i].stack...)
-	}
+	chain := make([]Middleware, 0, len(parentChain)+len(g.stack))
+	chain = append(chain, parentChain...)
+	chain = append(chain, g.stack...)
 	return chain
 }
 

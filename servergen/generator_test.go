@@ -15,8 +15,8 @@ func TestLoadRoutes(t *testing.T) {
 		t.Fatalf("LoadRoutes failed: %v", err)
 	}
 
-	if len(routes) != 5 {
-		t.Fatalf("expected 5 routes, got %d", len(routes))
+	if len(routes) != 11 {
+		t.Fatalf("expected 11 routes, got %d", len(routes))
 	}
 
 	var route, bodyRoute, bulkRoute, unsupportedRoute, flatRoute servergen.RouteSpec

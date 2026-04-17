@@ -163,3 +163,88 @@ func TestTimeout(t *testing.T) {
 		}
 	})
 }
+
+func TestTimeoutResponseRace(t *testing.T) {
+	t.Run("handler completing before timeout returns handler status", func(t *testing.T) {
+		r := server.NewRouter()
+		r.Use(plugins.Timeout(plugins.TimeoutConfig{Timeout: 200 * time.Millisecond}))
+
+		handlerReturned := make(chan struct{})
+
+		r.GET("/test", func(w http.ResponseWriter, r *http.Request) error {
+			time.Sleep(50 * time.Millisecond)
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("handler completed"))
+			close(handlerReturned)
+			return nil
+		})
+
+		req := httptest.NewRequest(http.MethodGet, "/test", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		<-handlerReturned
+
+		if w.Code != http.StatusOK {
+			t.Errorf("expected 200, got %d", w.Code)
+		}
+	})
+
+	t.Run("timeout before handler writes header returns 504", func(t *testing.T) {
+		r := server.NewRouter()
+		r.Use(plugins.Timeout(plugins.TimeoutConfig{Timeout: 10 * time.Millisecond}))
+
+		handlerReturned := make(chan struct{})
+		headerWritten := make(chan struct{})
+
+		r.GET("/test", func(w http.ResponseWriter, r *http.Request) error {
+			select {
+			case <-time.After(500 * time.Millisecond):
+			case <-r.Context().Done():
+				close(headerWritten)
+				return r.Context().Err()
+			}
+			close(handlerReturned)
+			return nil
+		})
+
+		req := httptest.NewRequest(http.MethodGet, "/test", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		select {
+		case <-headerWritten:
+			if w.Code != http.StatusGatewayTimeout {
+				t.Errorf("expected 504, got %d", w.Code)
+			}
+		case <-time.After(1 * time.Second):
+			t.Error("test timed out")
+		}
+	})
+
+	t.Run("request context cancellation returns error", func(t *testing.T) {
+		r := server.NewRouter()
+		r.Use(plugins.Timeout(plugins.TimeoutConfig{Timeout: 10 * time.Second}))
+
+		ctx, cancel := context.WithCancel(context.Background())
+
+		r.GET("/test", func(w http.ResponseWriter, r *http.Request) error {
+			time.Sleep(100 * time.Millisecond)
+			return nil
+		})
+
+		req := httptest.NewRequest(http.MethodGet, "/test", nil).WithContext(ctx)
+		w := httptest.NewRecorder()
+
+		go func() {
+			time.Sleep(10 * time.Millisecond)
+			cancel()
+		}()
+
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusInternalServerError {
+			t.Errorf("expected 500, got %d", w.Code)
+		}
+	})
+}

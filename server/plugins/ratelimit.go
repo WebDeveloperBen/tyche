@@ -14,18 +14,22 @@ type RateLimitConfig struct {
 	Burst             int
 }
 
-func RateLimit(cfg ...RateLimitConfig) server.Middleware {
+type RateLimitMiddleware interface {
+	Middleware() server.Middleware
+	Register(r *server.Router) func()
+	Stop()
+}
+
+func RateLimit(cfg ...RateLimitConfig) *rateLimitMiddleware {
 	c := RateLimitConfig{RequestsPerSecond: 100, Burst: 200}
 	if len(cfg) > 0 {
 		c = cfg[0]
 	}
-	m := newRateLimitMiddleware(c.RequestsPerSecond, c.Burst)
-	return m.Middleware()
+	return newRateLimitMiddleware(c.RequestsPerSecond, c.Burst)
 }
 
-func RateLimitWithDefaults() server.Middleware {
-	m := newRateLimitMiddleware(100, 200)
-	return m.Middleware()
+func RateLimitWithDefaults() *rateLimitMiddleware {
+	return newRateLimitMiddleware(100, 200)
 }
 
 func newRateLimitMiddleware(requestsPerSecond, burst int) *rateLimitMiddleware {
@@ -88,8 +92,9 @@ func (m *rateLimitMiddleware) Stop() {
 	close(m.closed)
 }
 
-func (m *rateLimitMiddleware) Register(r *server.Router) {
+func (m *rateLimitMiddleware) Register(r *server.Router) func() {
 	r.Use(m.Middleware())
+	return m.Stop
 }
 
 func (m *rateLimitMiddleware) Middleware() server.Middleware {

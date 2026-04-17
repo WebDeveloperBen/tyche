@@ -226,4 +226,89 @@ func TestCompressor(t *testing.T) {
 			t.Error("empty response should not be compressed")
 		}
 	})
+
+	t.Run("gzip compression respects MaxCompressedSize", func(t *testing.T) {
+		r := server.NewRouter()
+		r.Use(plugins.Compressor(plugins.CompressorConfig{
+			MaxCompressedSize: 70,
+		}))
+
+		r.GET("/test", func(w http.ResponseWriter, r *http.Request) error {
+			w.Header().Set("Content-Type", "text/plain")
+			w.Write([]byte("Hello, World! This is more than 10 bytes."))
+			return nil
+		})
+
+		req := httptest.NewRequest(http.MethodGet, "/test", nil)
+		req.Header.Set("Accept-Encoding", "gzip")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Header().Get("Content-Encoding") != "gzip" {
+			t.Errorf("expected gzip, got %s", w.Header().Get("Content-Encoding"))
+		}
+
+		if w.Body.Len() > 70 {
+			t.Errorf("compressed body %d bytes exceeds MaxCompressedSize of 70", w.Body.Len())
+		}
+	})
+
+	t.Run("brotli compression respects MaxCompressedSize", func(t *testing.T) {
+		r := server.NewRouter()
+		r.Use(plugins.Compressor(plugins.CompressorConfig{
+			MaxCompressedSize: 50,
+		}))
+
+		r.GET("/test", func(w http.ResponseWriter, r *http.Request) error {
+			w.Header().Set("Content-Type", "text/plain")
+			w.Write([]byte("Hello, World! This is more than 10 bytes."))
+			return nil
+		})
+
+		req := httptest.NewRequest(http.MethodGet, "/test", nil)
+		req.Header.Set("Accept-Encoding", "br")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Header().Get("Content-Encoding") != "br" {
+			t.Errorf("expected br, got %s", w.Header().Get("Content-Encoding"))
+		}
+
+		if w.Body.Len() > 50 {
+			t.Errorf("compressed body %d bytes exceeds MaxCompressedSize of 50", w.Body.Len())
+		}
+	})
+
+	t.Run("small responses under MaxCompressedSize are not truncated", func(t *testing.T) {
+		r := server.NewRouter()
+		r.Use(plugins.Compressor(plugins.CompressorConfig{
+			MaxCompressedSize: 100,
+		}))
+
+		r.GET("/test", func(w http.ResponseWriter, r *http.Request) error {
+			w.Header().Set("Content-Type", "text/plain")
+			w.Write([]byte("Hi"))
+			return nil
+		})
+
+		req := httptest.NewRequest(http.MethodGet, "/test", nil)
+		req.Header.Set("Accept-Encoding", "gzip")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		gr, err := gzip.NewReader(bytes.NewReader(w.Body.Bytes()))
+		if err != nil {
+			t.Fatalf("failed to create gzip reader: %v", err)
+		}
+		defer gr.Close()
+
+		data, err := io.ReadAll(gr)
+		if err != nil {
+			t.Fatalf("failed to read gzip data: %v", err)
+		}
+
+		if string(data) != "Hi" {
+			t.Errorf("expected 'Hi', got '%s'", string(data))
+		}
+	})
 }

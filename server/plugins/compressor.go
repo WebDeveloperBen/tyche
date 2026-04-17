@@ -3,6 +3,7 @@ package plugins
 import (
 	"bufio"
 	"compress/gzip"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -13,17 +14,21 @@ import (
 	"github.com/webdeveloperben/tyche/server"
 )
 
+var ErrCompressedSizeLimitExceeded = errors.New("compressed output exceeds configured size limit")
+
 type CompressorConfig struct {
-	Level        int
-	ContentTypes []string
+	Level             int
+	ContentTypes      []string
+	MaxCompressedSize int64
 }
 
 type compressorMiddleware struct {
-	level           int
-	contentTypes    map[string]struct{}
-	contentWildcard map[string]struct{}
-	poolBrotli      *sync.Pool
-	poolGzip        *sync.Pool
+	level             int
+	contentTypes      map[string]struct{}
+	contentWildcard   map[string]struct{}
+	maxCompressedSize int64
+	poolBrotli        *sync.Pool
+	poolGzip          *sync.Pool
 }
 
 func Compressor(cfg ...CompressorConfig) server.Middleware {
@@ -34,6 +39,7 @@ func Compressor(cfg ...CompressorConfig) server.Middleware {
 			"application/javascript", "application/x-javascript", "application/json",
 			"application/atom+xml", "application/rss+xml", "image/svg+xml",
 		},
+		MaxCompressedSize: 10 << 20,
 	}
 	if len(cfg) > 0 {
 		if cfg[0].Level != 0 {
@@ -41,6 +47,9 @@ func Compressor(cfg ...CompressorConfig) server.Middleware {
 		}
 		if len(cfg[0].ContentTypes) > 0 {
 			c.ContentTypes = cfg[0].ContentTypes
+		}
+		if cfg[0].MaxCompressedSize > 0 {
+			c.MaxCompressedSize = cfg[0].MaxCompressedSize
 		}
 	}
 
@@ -55,9 +64,10 @@ func Compressor(cfg ...CompressorConfig) server.Middleware {
 	}
 
 	m := &compressorMiddleware{
-		level:           c.Level,
-		contentTypes:    contentTypes,
-		contentWildcard: contentWildcard,
+		level:             c.Level,
+		contentTypes:      contentTypes,
+		contentWildcard:   contentWildcard,
+		maxCompressedSize: c.MaxCompressedSize,
 	}
 
 	m.poolBrotli = &sync.Pool{
@@ -89,12 +99,13 @@ func (m *compressorMiddleware) Middleware() server.Middleware {
 			encoding := m.selectEncoding(r.Header.Get("Accept-Encoding"))
 
 			cw := &compressResponseWriter{
-				ResponseWriter:  w,
-				w:               w,
-				contentTypes:    m.contentTypes,
-				contentWildcard: m.contentWildcard,
-				encoding:        encoding,
-				compressible:    false,
+				ResponseWriter:    w,
+				w:                 w,
+				contentTypes:      m.contentTypes,
+				contentWildcard:   m.contentWildcard,
+				encoding:          encoding,
+				compressible:      false,
+				maxCompressedSize: m.maxCompressedSize,
 			}
 
 			if encoding != "" {
@@ -102,12 +113,16 @@ func (m *compressorMiddleware) Middleware() server.Middleware {
 				case "br":
 					bw := m.poolBrotli.Get().(*brotliWriter)
 					bw.Reset(w)
+					bw.limit = m.maxCompressedSize
 					cw.w = bw
+					cw.compressWriter = bw
 					defer m.poolBrotli.Put(bw)
 				case "gzip":
 					gw := m.poolGzip.Get().(*gzipWriter)
 					gw.Reset(w)
+					gw.limit = m.maxCompressedSize
 					cw.w = gw
+					cw.compressWriter = gw
 					defer m.poolGzip.Put(gw)
 				}
 			}
@@ -138,16 +153,50 @@ func (m *compressorMiddleware) selectEncoding(header string) string {
 	return ""
 }
 
+type limitWriter struct {
+	w     io.Writer
+	limit int64
+	n     int64
+}
+
+func (lw *limitWriter) Write(p []byte) (int, error) {
+	if lw.n+int64(len(p)) > lw.limit {
+		n, _ := lw.w.Write(p[:lw.limit-lw.n])
+		lw.n = lw.limit
+		return n, ErrCompressedSizeLimitExceeded
+	}
+	n, err := lw.w.Write(p)
+	lw.n += int64(n)
+	return n, err
+}
+
 type brotliWriter struct {
-	w *brotli.Writer
+	w     *brotli.Writer
+	limit int64
+	n     int64
 }
 
 func (b *brotliWriter) Write(p []byte) (int, error) {
-	return b.w.Write(p)
+	if b.limit > 0 && b.n+int64(len(p)) > b.limit {
+		before := b.limit - b.n
+		if before <= 0 {
+			return 0, ErrCompressedSizeLimitExceeded
+		}
+		n, err := b.w.Write(p[:before])
+		b.n += int64(n)
+		if b.n >= b.limit {
+			return n, ErrCompressedSizeLimitExceeded
+		}
+		return n, err
+	}
+	n, err := b.w.Write(p)
+	b.n += int64(n)
+	return n, err
 }
 
 func (b *brotliWriter) Reset(w io.Writer) {
 	b.w.Reset(w)
+	b.n = 0
 }
 
 func (b *brotliWriter) Close() error {
@@ -155,15 +204,32 @@ func (b *brotliWriter) Close() error {
 }
 
 type gzipWriter struct {
-	w *gzip.Writer
+	w     *gzip.Writer
+	limit int64
+	n     int64
 }
 
 func (g *gzipWriter) Write(p []byte) (int, error) {
-	return g.w.Write(p)
+	if g.limit > 0 && g.n+int64(len(p)) > g.limit {
+		before := g.limit - g.n
+		if before <= 0 {
+			return 0, ErrCompressedSizeLimitExceeded
+		}
+		n, err := g.w.Write(p[:before])
+		g.n += int64(n)
+		if g.n >= g.limit {
+			return n, ErrCompressedSizeLimitExceeded
+		}
+		return n, err
+	}
+	n, err := g.w.Write(p)
+	g.n += int64(n)
+	return n, err
 }
 
 func (g *gzipWriter) Reset(w io.Writer) error {
 	g.w.Reset(w)
+	g.n = 0
 	return nil
 }
 
@@ -173,12 +239,14 @@ func (g *gzipWriter) Close() error {
 
 type compressResponseWriter struct {
 	http.ResponseWriter
-	w               io.Writer
-	contentTypes    map[string]struct{}
-	contentWildcard map[string]struct{}
-	encoding        string
-	wroteHeader     bool
-	compressible    bool
+	w                 io.Writer
+	compressWriter    io.Writer
+	contentTypes      map[string]struct{}
+	contentWildcard   map[string]struct{}
+	encoding          string
+	wroteHeader       bool
+	compressible      bool
+	maxCompressedSize int64
 }
 
 func (cw *compressResponseWriter) isCompressible() bool {
