@@ -1,13 +1,15 @@
 package plugins
 
 import (
-	"log/slog"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/webdeveloperben/tyche/server"
 )
+
+var ErrCORSWildcardWithCredentials = errors.New("CORS: wildcard origin with AllowCredentials is invalid; credentials require specific origin")
 
 type CORSConfig struct {
 	AllowedOrigins     []string
@@ -42,15 +44,28 @@ func (w wildcard) match(s string) bool {
 	return len(s) >= len(w.prefix)+len(w.suffix) && strings.HasPrefix(s, w.prefix) && strings.HasSuffix(s, w.suffix)
 }
 
-func CORS(cfg ...CORSConfig) server.ServeHTTPMiddleware {
+func CORS(cfg ...CORSConfig) (server.ServeHTTPMiddleware, error) {
 	c := CORSConfig{}
 	if len(cfg) > 0 {
 		c = cfg[0]
 	}
-	return newCORS(c).Middleware()
+	return newCORS(c)
 }
 
-func newCORS(c CORSConfig) *corsMiddleware {
+func newCORS(c CORSConfig) (server.ServeHTTPMiddleware, error) {
+	if c.AllowCredentials {
+		hasWildcard := false
+		for _, origin := range c.AllowedOrigins {
+			if origin == "*" {
+				hasWildcard = true
+				break
+			}
+		}
+		if hasWildcard {
+			return nil, ErrCORSWildcardWithCredentials
+		}
+	}
+
 	m := &corsMiddleware{
 		allowCredentials:   c.AllowCredentials,
 		maxAge:             c.MaxAge,
@@ -117,20 +132,20 @@ func newCORS(c CORSConfig) *corsMiddleware {
 		m.exposedHeaders = strings.Join(canonicalHeaders(c.ExposedHeaders), ", ")
 	}
 
-	if m.allowOriginsAll && c.AllowCredentials {
-		slog.Warn("CORS: wildcard origin with AllowCredentials echoes request origin instead of sending '*'; credentials require specific origin")
-	}
-
-	return m
+	return m.Middleware(), nil
 }
 
 func CORSWithDefaults() server.ServeHTTPMiddleware {
-	return CORS(CORSConfig{
-		AllowedOrigins: []string{"*"},
+	mw, err := CORS(CORSConfig{
+		AllowedOrigins: []string{"https://example.com"},
 		AllowedMethods: []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodPatch, http.MethodOptions},
 		AllowedHeaders: []string{"Accept", "Authorization", "Content-Type", "X-Requested-With"},
 		MaxAge:         86400,
 	})
+	if err != nil {
+		panic(err)
+	}
+	return mw
 }
 
 func (m *corsMiddleware) Register(r *server.Router) {
@@ -140,6 +155,12 @@ func (m *corsMiddleware) Register(r *server.Router) {
 func (m *corsMiddleware) Middleware() server.ServeHTTPMiddleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			defer func() {
+				if rec := recover(); rec != nil {
+					http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+				}
+			}()
+
 			_, hasOrigin := r.Header["Origin"]
 
 			if r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != "" && hasOrigin {

@@ -195,9 +195,17 @@ func numericValue(v reflect.Value) float64 {
 }
 
 func ValidateUUID(value string) bool {
-	if len(value) != 36 {
+	switch len(value) {
+	case 36:
+		return validateHyphenatedUUID(value)
+	case 32:
+		return validateHexOnlyUUID(value)
+	default:
 		return false
 	}
+}
+
+func validateHyphenatedUUID(value string) bool {
 	for i := range value {
 		switch i {
 		case 8, 13, 18, 23:
@@ -208,6 +216,15 @@ func ValidateUUID(value string) bool {
 			if !isHexByte(value[i]) {
 				return false
 			}
+		}
+	}
+	return true
+}
+
+func validateHexOnlyUUID(value string) bool {
+	for i := range value {
+		if !isHexByte(value[i]) {
+			return false
 		}
 	}
 	return true

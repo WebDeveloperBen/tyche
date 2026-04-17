@@ -81,6 +81,7 @@ func extractRealIP(r *http.Request, trustedCIDRs []*net.IPNet) string {
 	}
 
 	parts := strings.Split(xff, ",")
+	var lastUntrusted string
 	for i := range parts {
 		ipStr := strings.TrimSpace(parts[len(parts)-1-i])
 		if ipStr == "" {
@@ -103,6 +104,11 @@ func extractRealIP(r *http.Request, trustedCIDRs []*net.IPNet) string {
 		if !isTrusted {
 			return ipStr
 		}
+		lastUntrusted = ipStr
+	}
+
+	if lastUntrusted != "" {
+		return lastUntrusted
 	}
 
 	return ""

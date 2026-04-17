@@ -1,6 +1,7 @@
 package validation
 
 import (
+	"container/list"
 	"fmt"
 	"reflect"
 	"sync"
@@ -30,19 +31,66 @@ type cachedSpec struct {
 	err  error
 }
 
-var structSpecCache sync.Map
+const maxSpecCacheSize = 1024
+
+type lruCache struct {
+	mu    sync.Mutex
+	cache map[reflect.Type]*list.Element
+	order *list.List
+}
+
+func newLRUCache() *lruCache {
+	return &lruCache{
+		cache: make(map[reflect.Type]*list.Element),
+		order: list.New(),
+	}
+}
+
+func (c *lruCache) Get(t reflect.Type) (*cachedSpec, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	elem, ok := c.cache[t]
+	if !ok {
+		return nil, false
+	}
+	c.order.MoveToFront(elem)
+	return elem.Value.(*cachedSpec), true
+}
+
+func (c *lruCache) Put(t reflect.Type, entry *cachedSpec) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if elem, ok := c.cache[t]; ok {
+		c.order.MoveToFront(elem)
+		elem.Value = entry
+		return
+	}
+
+	if c.order.Len() >= maxSpecCacheSize {
+		elem := c.order.Back()
+		if elem != nil {
+			delete(c.cache, elem.Value.(*cachedSpec).spec.Type)
+			c.order.Remove(elem)
+		}
+	}
+
+	elem := c.order.PushFront(entry)
+	c.cache[t] = elem
+}
+
+var structSpecCache = newLRUCache()
 
 func Struct(t reflect.Type) (*StructSpec, error) {
 	t = IndirectType(t)
-	if cached, ok := structSpecCache.Load(t); ok {
-		entry := cached.(*cachedSpec)
-		return entry.spec, entry.err
+	if cached, ok := structSpecCache.Get(t); ok {
+		return cached.spec, cached.err
 	}
 	spec, err := buildStructSpec(t)
 	entry := &cachedSpec{spec: spec, err: err}
-	actual, _ := structSpecCache.LoadOrStore(t, entry)
-	resolved := actual.(*cachedSpec)
-	return resolved.spec, resolved.err
+	structSpecCache.Put(t, entry)
+	return entry.spec, entry.err
 }
 
 func buildStructSpec(t reflect.Type) (*StructSpec, error) {

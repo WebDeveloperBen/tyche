@@ -2,7 +2,6 @@ package plugins
 
 import (
 	"net/http"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -56,7 +55,6 @@ type rateLimitMiddleware struct {
 	tokens            int64
 	closed            chan struct{}
 	stopped           atomic.Bool
-	mu                sync.Mutex
 }
 
 func (m *rateLimitMiddleware) refill() {
@@ -75,9 +73,6 @@ func (m *rateLimitMiddleware) refill() {
 			max := atomic.LoadInt64(&m.maxTokens)
 			if tokens < max {
 				atomic.AddInt64(&m.tokens, 1)
-				if atomic.LoadInt64(&m.tokens) > max {
-					atomic.StoreInt64(&m.tokens, max)
-				}
 			}
 		case <-m.closed:
 			return

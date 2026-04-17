@@ -1,6 +1,7 @@
 package plugins_test
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -12,7 +13,11 @@ import (
 func TestCORS(t *testing.T) {
 	t.Run("allows requests without Origin header", func(t *testing.T) {
 		r := server.NewRouter()
-		r.UseHTTP(plugins.CORS())
+		mw, err := plugins.CORS()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		r.UseHTTP(mw)
 
 		r.GET("/test", func(w http.ResponseWriter, r *http.Request) error {
 			w.WriteHeader(http.StatusOK)
@@ -30,9 +35,13 @@ func TestCORS(t *testing.T) {
 
 	t.Run("allows wildcard origin", func(t *testing.T) {
 		r := server.NewRouter()
-		r.UseHTTP(plugins.CORS(plugins.CORSConfig{
+		mw, err := plugins.CORS(plugins.CORSConfig{
 			AllowedOrigins: []string{"*"},
-		}))
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		r.UseHTTP(mw)
 
 		r.GET("/test", func(w http.ResponseWriter, r *http.Request) error {
 			return nil
@@ -50,9 +59,13 @@ func TestCORS(t *testing.T) {
 
 	t.Run("allows specific origin", func(t *testing.T) {
 		r := server.NewRouter()
-		r.UseHTTP(plugins.CORS(plugins.CORSConfig{
+		mw, err := plugins.CORS(plugins.CORSConfig{
 			AllowedOrigins: []string{"http://example.com"},
-		}))
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		r.UseHTTP(mw)
 
 		r.GET("/test", func(w http.ResponseWriter, r *http.Request) error {
 			return nil
@@ -70,9 +83,13 @@ func TestCORS(t *testing.T) {
 
 	t.Run("denies disallowed origin", func(t *testing.T) {
 		r := server.NewRouter()
-		r.UseHTTP(plugins.CORS(plugins.CORSConfig{
+		mw, err := plugins.CORS(plugins.CORSConfig{
 			AllowedOrigins: []string{"http://example.com"},
-		}))
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		r.UseHTTP(mw)
 
 		r.GET("/test", func(w http.ResponseWriter, r *http.Request) error {
 			return nil
@@ -90,9 +107,13 @@ func TestCORS(t *testing.T) {
 
 	t.Run("handles subdomain wildcard", func(t *testing.T) {
 		r := server.NewRouter()
-		r.UseHTTP(plugins.CORS(plugins.CORSConfig{
+		mw, err := plugins.CORS(plugins.CORSConfig{
 			AllowedOrigins: []string{"*.example.com"},
-		}))
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		r.UseHTTP(mw)
 
 		r.GET("/test", func(w http.ResponseWriter, r *http.Request) error {
 			return nil
@@ -112,9 +133,13 @@ func TestCORS(t *testing.T) {
 
 	t.Run("denies non-matching subdomain wildcard", func(t *testing.T) {
 		r := server.NewRouter()
-		r.UseHTTP(plugins.CORS(plugins.CORSConfig{
+		mw, err := plugins.CORS(plugins.CORSConfig{
 			AllowedOrigins: []string{"*.example.com"},
-		}))
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		r.UseHTTP(mw)
 
 		r.GET("/test", func(w http.ResponseWriter, r *http.Request) error {
 			return nil
@@ -132,12 +157,16 @@ func TestCORS(t *testing.T) {
 
 	t.Run("uses AllowOriginFunc callback", func(t *testing.T) {
 		r := server.NewRouter()
-		r.UseHTTP(plugins.CORS(plugins.CORSConfig{
+		mw, err := plugins.CORS(plugins.CORSConfig{
 			AllowedMethods: []string{http.MethodGet},
 			AllowOriginFunc: func(r *http.Request, origin string) bool {
 				return origin == "http://allowed.com"
 			},
-		}))
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		r.UseHTTP(mw)
 
 		r.GET("/test", func(w http.ResponseWriter, r *http.Request) error {
 			return nil
@@ -155,13 +184,17 @@ func TestCORS(t *testing.T) {
 
 	t.Run("preflight request returns proper headers", func(t *testing.T) {
 		r := server.NewRouter()
-		r.UseHTTP(plugins.CORS(plugins.CORSConfig{
+		mw, err := plugins.CORS(plugins.CORSConfig{
 			AllowedOrigins:   []string{"http://example.com"},
 			AllowedMethods:   []string{http.MethodGet, http.MethodPost},
 			AllowedHeaders:   []string{"Authorization", "Content-Type"},
 			AllowCredentials: true,
 			MaxAge:           86400,
-		}))
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		r.UseHTTP(mw)
 
 		r.GET("/test", func(w http.ResponseWriter, r *http.Request) error {
 			return nil
@@ -193,10 +226,14 @@ func TestCORS(t *testing.T) {
 
 	t.Run("preflight with disallowed method returns 204 without method header", func(t *testing.T) {
 		r := server.NewRouter()
-		r.UseHTTP(plugins.CORS(plugins.CORSConfig{
+		mw, err := plugins.CORS(plugins.CORSConfig{
 			AllowedOrigins: []string{"http://example.com"},
 			AllowedMethods: []string{http.MethodGet},
-		}))
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		r.UseHTTP(mw)
 
 		r.GET("/test", func(w http.ResponseWriter, r *http.Request) error {
 			return nil
@@ -223,7 +260,11 @@ func TestCORS(t *testing.T) {
 
 	t.Run("sets Vary header", func(t *testing.T) {
 		r := server.NewRouter()
-		r.UseHTTP(plugins.CORS())
+		mw, err := plugins.CORS()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		r.UseHTTP(mw)
 
 		r.GET("/test", func(w http.ResponseWriter, r *http.Request) error {
 			return nil
@@ -241,10 +282,14 @@ func TestCORS(t *testing.T) {
 
 	t.Run("exposes headers with Access-Control-Expose-Headers", func(t *testing.T) {
 		r := server.NewRouter()
-		r.UseHTTP(plugins.CORS(plugins.CORSConfig{
-			AllowedOrigins: []string{"*"},
+		mw, err := plugins.CORS(plugins.CORSConfig{
+			AllowedOrigins: []string{"http://example.com"},
 			ExposedHeaders: []string{"X-Custom-Header"},
-		}))
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		r.UseHTTP(mw)
 
 		r.GET("/test", func(w http.ResponseWriter, r *http.Request) error {
 			return nil
@@ -262,9 +307,13 @@ func TestCORS(t *testing.T) {
 
 	t.Run("canonicalizes header names", func(t *testing.T) {
 		r := server.NewRouter()
-		r.UseHTTP(plugins.CORS(plugins.CORSConfig{
+		mw, err := plugins.CORS(plugins.CORSConfig{
 			AllowedHeaders: []string{"x-custom-header", "content-type"},
-		}))
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		r.UseHTTP(mw)
 
 		r.GET("/test", func(w http.ResponseWriter, r *http.Request) error {
 			return nil
@@ -281,4 +330,18 @@ func TestCORS(t *testing.T) {
 			t.Errorf("expected 204, got %d", w.Code)
 		}
 	})
+}
+
+func TestCORSWildcardWithCredentialsError(t *testing.T) {
+	_, err := plugins.CORS(plugins.CORSConfig{
+		AllowedOrigins:   []string{"*"},
+		AllowCredentials: true,
+	})
+
+	if err == nil {
+		t.Error("expected error for wildcard origin with credentials")
+	}
+	if !errors.Is(err, plugins.ErrCORSWildcardWithCredentials) {
+		t.Errorf("expected ErrCORSWildcardWithCredentials, got %v", err)
+	}
 }
