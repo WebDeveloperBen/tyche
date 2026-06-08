@@ -79,16 +79,17 @@ func (g *Group) Use(mw ...Middleware) *Group {
 	return g
 }
 
-func (g *Group) HandleE(method, pattern string, fn HandlerFunc) error {
+func (g *Group) HandleE(method, pattern string, fn HandlerFunc, opts ...RouteOption) error {
 	if g == nil {
 		return errors.New("group is required")
 	}
 	path := joinPath(g.prefix, pattern)
-	return g.router.handle(path, method, fn, g)
+	ro := resolveRouteOptions(opts)
+	return g.router.handle(path, method, fn, g, ro.middleware)
 }
 
-func (g *Group) Handle(method, pattern string, fn HandlerFunc) {
-	if err := g.HandleE(method, pattern, fn); err != nil {
+func (g *Group) Handle(method, pattern string, fn HandlerFunc, opts ...RouteOption) {
+	if err := g.HandleE(method, pattern, fn, opts...); err != nil {
 		panic(err)
 	}
 }
@@ -103,19 +104,33 @@ func joinPath(prefix, pattern string) string {
 	return prefix + pattern
 }
 
-func (g *Group) GET(pattern string, fn HandlerFunc) { g.Handle(http.MethodGet, pattern, fn) }
+func (g *Group) GET(pattern string, fn HandlerFunc, opts ...RouteOption) {
+	g.Handle(http.MethodGet, pattern, fn, opts...)
+}
 
-func (g *Group) POST(pattern string, fn HandlerFunc) { g.Handle(http.MethodPost, pattern, fn) }
+func (g *Group) POST(pattern string, fn HandlerFunc, opts ...RouteOption) {
+	g.Handle(http.MethodPost, pattern, fn, opts...)
+}
 
-func (g *Group) PUT(pattern string, fn HandlerFunc) { g.Handle(http.MethodPut, pattern, fn) }
+func (g *Group) PUT(pattern string, fn HandlerFunc, opts ...RouteOption) {
+	g.Handle(http.MethodPut, pattern, fn, opts...)
+}
 
-func (g *Group) DELETE(pattern string, fn HandlerFunc) { g.Handle(http.MethodDelete, pattern, fn) }
+func (g *Group) DELETE(pattern string, fn HandlerFunc, opts ...RouteOption) {
+	g.Handle(http.MethodDelete, pattern, fn, opts...)
+}
 
-func (g *Group) PATCH(pattern string, fn HandlerFunc) { g.Handle(http.MethodPatch, pattern, fn) }
+func (g *Group) PATCH(pattern string, fn HandlerFunc, opts ...RouteOption) {
+	g.Handle(http.MethodPatch, pattern, fn, opts...)
+}
 
-func (g *Group) OPTIONS(pattern string, fn HandlerFunc) { g.Handle(http.MethodOptions, pattern, fn) }
+func (g *Group) OPTIONS(pattern string, fn HandlerFunc, opts ...RouteOption) {
+	g.Handle(http.MethodOptions, pattern, fn, opts...)
+}
 
-func (g *Group) HEAD(pattern string, fn HandlerFunc) { g.Handle(http.MethodHead, pattern, fn) }
+func (g *Group) HEAD(pattern string, fn HandlerFunc, opts ...RouteOption) {
+	g.Handle(http.MethodHead, pattern, fn, opts...)
+}
 
 type ServeHTTPMiddleware func(next http.Handler) http.Handler
 
@@ -218,11 +233,11 @@ func (r *Router) UseServeHTTP(mw ServeHTTPMiddleware) {
 	r.UseHTTP(mw)
 }
 
-func (r *Router) HandleE(method, pattern string, fn HandlerFunc) error {
-	return r.rootGroup.HandleE(method, pattern, fn)
+func (r *Router) HandleE(method, pattern string, fn HandlerFunc, opts ...RouteOption) error {
+	return r.rootGroup.HandleE(method, pattern, fn, opts...)
 }
 
-func (r *Router) handle(pattern, method string, fn HandlerFunc, g *Group) error {
+func (r *Router) handle(pattern, method string, fn HandlerFunc, g *Group, routeMW []Middleware) error {
 	if !strings.HasPrefix(pattern, "/") {
 		return fmt.Errorf("path must start with /: %s", pattern)
 	}
@@ -235,7 +250,7 @@ func (r *Router) handle(pattern, method string, fn HandlerFunc, g *Group) error 
 
 	params := extractParams(pattern)
 	routeNode := r.Root.addRoute(pattern)
-	if err := routeNode.setHandler(method, pattern, fn, params, routeNode.wcName, g, r.wrapHandler(fn, g)); err != nil {
+	if err := routeNode.setHandler(method, pattern, fn, params, routeNode.wcName, g, routeMW, r.wrapHandler(fn, g, routeMW)); err != nil {
 		return err
 	}
 	return nil
@@ -277,28 +292,32 @@ func extractParams(pattern string) []string {
 	return params
 }
 
-func (r *Router) GET(pattern string, fn HandlerFunc) { r.rootGroup.Handle(http.MethodGet, pattern, fn) }
-
-func (r *Router) POST(pattern string, fn HandlerFunc) {
-	r.rootGroup.Handle(http.MethodPost, pattern, fn)
+func (r *Router) GET(pattern string, fn HandlerFunc, opts ...RouteOption) {
+	r.rootGroup.Handle(http.MethodGet, pattern, fn, opts...)
 }
 
-func (r *Router) PUT(pattern string, fn HandlerFunc) { r.rootGroup.Handle(http.MethodPut, pattern, fn) }
-
-func (r *Router) DELETE(pattern string, fn HandlerFunc) {
-	r.rootGroup.Handle(http.MethodDelete, pattern, fn)
+func (r *Router) POST(pattern string, fn HandlerFunc, opts ...RouteOption) {
+	r.rootGroup.Handle(http.MethodPost, pattern, fn, opts...)
 }
 
-func (r *Router) PATCH(pattern string, fn HandlerFunc) {
-	r.rootGroup.Handle(http.MethodPatch, pattern, fn)
+func (r *Router) PUT(pattern string, fn HandlerFunc, opts ...RouteOption) {
+	r.rootGroup.Handle(http.MethodPut, pattern, fn, opts...)
 }
 
-func (r *Router) OPTIONS(pattern string, fn HandlerFunc) {
-	r.rootGroup.Handle(http.MethodOptions, pattern, fn)
+func (r *Router) DELETE(pattern string, fn HandlerFunc, opts ...RouteOption) {
+	r.rootGroup.Handle(http.MethodDelete, pattern, fn, opts...)
 }
 
-func (r *Router) HEAD(pattern string, fn HandlerFunc) {
-	r.rootGroup.Handle(http.MethodHead, pattern, fn)
+func (r *Router) PATCH(pattern string, fn HandlerFunc, opts ...RouteOption) {
+	r.rootGroup.Handle(http.MethodPatch, pattern, fn, opts...)
+}
+
+func (r *Router) OPTIONS(pattern string, fn HandlerFunc, opts ...RouteOption) {
+	r.rootGroup.Handle(http.MethodOptions, pattern, fn, opts...)
+}
+
+func (r *Router) HEAD(pattern string, fn HandlerFunc, opts ...RouteOption) {
+	r.rootGroup.Handle(http.MethodHead, pattern, fn, opts...)
 }
 
 func (r *Router) OpenAPIHandler() HandlerFunc {
@@ -568,9 +587,15 @@ func (w *trackedResponseWriter) Push(target string, opts *http.PushOptions) erro
 	return pusher.Push(target, opts)
 }
 
-func (r *Router) wrapHandler(fn HandlerFunc, g *Group) HandlerFunc {
+// wrapHandler builds the final handler for a route by applying middleware from
+// outermost to innermost: root middleware, then group middleware (parent to
+// child via middlewareChain), then route-level middleware, then the handler.
+func (r *Router) wrapHandler(fn HandlerFunc, g *Group, routeMW []Middleware) HandlerFunc {
 	stack := g.middlewareChain()
 	wrapped := fn
+	for i := len(routeMW) - 1; i >= 0; i-- {
+		wrapped = routeMW[i](wrapped)
+	}
 	for i := len(stack) - 1; i >= 0; i-- {
 		wrapped = stack[i](wrapped)
 	}
@@ -579,7 +604,7 @@ func (r *Router) wrapHandler(fn HandlerFunc, g *Group) HandlerFunc {
 
 func (r *Router) rebuildHandlers() {
 	r.Root.rebuildHandlers(func(handler *routeHandler) HandlerFunc {
-		return r.wrapHandler(handler.fn, handler.group)
+		return r.wrapHandler(handler.fn, handler.group, handler.routeMW)
 	})
 }
 

@@ -61,13 +61,13 @@ func (r *Router) RegisteredOperations() []RegisteredOperation {
 	return append([]RegisteredOperation(nil), r.operations...)
 }
 
-func Register[I, O any](grp *Group, op Operation, handler TypedHandler[I, O]) {
-	if err := RegisterE(grp, op, handler); err != nil {
+func Register[I, O any](grp *Group, op Operation, handler TypedHandler[I, O], opts ...RouteOption) {
+	if err := RegisterE(grp, op, handler, opts...); err != nil {
 		panic(err)
 	}
 }
 
-func RegisterE[I, O any](grp *Group, op Operation, handler TypedHandler[I, O]) error {
+func RegisterE[I, O any](grp *Group, op Operation, handler TypedHandler[I, O], opts ...RouteOption) error {
 	if grp == nil {
 		return errors.New("group cannot be nil")
 	}
@@ -132,7 +132,7 @@ func RegisterE[I, O any](grp *Group, op Operation, handler TypedHandler[I, O]) e
 		return codec.Write(w, req, out)
 	}
 
-	if err := grp.HandleE(op.Method, op.Path, httpHandler); err != nil {
+	if err := grp.HandleE(op.Method, op.Path, httpHandler, opts...); err != nil {
 		return err
 	}
 	registerOpenAPIOperation(grp, op, inputType, outputType, outputSpec)

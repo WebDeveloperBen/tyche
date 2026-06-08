@@ -44,6 +44,56 @@ if err := apidocs.Mount(router, apidocs.Config{
 
 Convenience wrappers such as `server.Register(...)`, `group.Handle(...)`, and `router.GET(...)` still exist, but they panic on invalid setup. They are best treated as must-style helpers.
 
+## Middleware
+
+Tyche middleware is a `func(next HandlerFunc) HandlerFunc`. It can be applied at three scopes, which run outermost to innermost: root, group, then route.
+
+```go
+// http.Handler middleware runs at the network edge, before routing.
+router.UseHTTP(httpmw.Recover(), httpmw.RealIP())
+
+// Root- and group-level Tyche middleware.
+router.Use(middleware.RequestID())
+api := router.Group("/v1", middleware.Auth(authSvc), middleware.AccessLog(logger))
+
+// Route-level middleware via WithMiddleware. Runs after root and group
+// middleware, immediately before the handler.
+server.Register(api, chatOp, chatHandler,
+	server.WithMiddleware(middleware.RequireScope("llm:chat")),
+)
+
+api.POST("/v1/chat/completions", handler,
+	server.WithMiddleware(middleware.RequireAuth()),
+)
+```
+
+Ergonomic helpers:
+
+- `server.MiddlewareFromFunc(fn)` — write middleware as a single `func(w, r, next) error` instead of nesting two closures.
+- `server.Chain(mw...)` — compose several middleware into one, for packaging reusable groups.
+- `server.WithMiddleware(mw...)` — attach middleware to a single route (accepted by the verb helpers, `Handle`/`HandleE`, and `Register`/`RegisterE`).
+- `server.NamedMiddleware` + `router.UseNamed(...)` / `group.UseNamed(...)` — register plugin-style middleware that carries a stable name.
+- `server.NewContextKey[T](name)` — a typed context key with `WithValue`/`WithRequest`/`From` for request-scoped metadata (auth claims, trace IDs, tenant info) without hand-rolling unexported key types.
+
+```go
+var authKey = server.NewContextKey[Claims]("auth")
+
+func Auth(svc AuthService) server.Middleware {
+	return server.MiddlewareFromFunc(func(w http.ResponseWriter, r *http.Request, next server.HandlerFunc) error {
+		claims, err := svc.Verify(r)
+		if err != nil {
+			return server.NewHTTPError(http.StatusUnauthorized, "unauthorized")
+		}
+		return next(w, authKey.WithRequest(r, claims))
+	})
+}
+
+func handler(ctx context.Context, in *Input) (*Output, error) {
+	claims, ok := authKey.From(ctx)
+	// ...
+}
+```
+
 ## CLI
 
 Install:
