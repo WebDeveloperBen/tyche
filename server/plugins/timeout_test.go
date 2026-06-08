@@ -53,8 +53,7 @@ func TestTimeout(t *testing.T) {
 		r := server.NewRouter()
 		r.Use(plugins.Timeout(plugins.TimeoutConfig{Timeout: 50 * time.Millisecond}))
 
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		ctx := t.Context()
 
 		done := make(chan struct{})
 
@@ -137,8 +136,7 @@ func TestTimeout(t *testing.T) {
 		r := server.NewRouter()
 		r.Use(plugins.Timeout(plugins.TimeoutConfig{Timeout: 50 * time.Millisecond}))
 
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		ctx := t.Context()
 
 		handlerDone := make(chan struct{}, 1)
 

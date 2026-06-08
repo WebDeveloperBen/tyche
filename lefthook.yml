@@ -15,9 +15,17 @@
 #     and runs build/lint/test in parallel once formatting has completed.
 
 pre-commit:
-  # Top-level jobs run sequentially, so formatting finishes (and re-stages)
-  # before the verify group reads the files.
+  # Top-level jobs run sequentially, so the autofixers (modernize, then gofumpt)
+  # finish and re-stage before the verify group reads the files.
   jobs:
+    # modernize rewrites code to current Go idioms (min/max, slices/maps,
+    # range-over-int, etc.). Like build/lint/test it is package-scoped (./...),
+    # but it mutates source, so it runs in the format phase with stage_fixed.
+    - name: modernize
+      glob: "*.go"
+      run: go run golang.org/x/tools/go/analysis/passes/modernize/cmd/modernize@latest -fix ./...
+      stage_fixed: true
+
     - name: gofumpt
       glob: "*.go"
       exclude:

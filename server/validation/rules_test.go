@@ -70,9 +70,9 @@ func TestParseFieldRules_StringFormatRules(t *testing.T) {
 
 func TestParseFieldRules_IntRules(t *testing.T) {
 	tests := []struct {
-		tag      string
-		kind     validation.RuleKind
-		wantInt  int
+		tag     string
+		kind    validation.RuleKind
+		wantInt int
 	}{
 		{`validate:"min=3"`, validation.RuleMin, 3},
 		{`validate:"max=10"`, validation.RuleMax, 10},
@@ -195,7 +195,7 @@ func TestStruct_RuleCompatibilityErrors(t *testing.T) {
 		type S struct {
 			Active bool `json:"active" validate:"min=1"`
 		}
-		_, err := validation.Struct(reflect.TypeOf(S{}))
+		_, err := validation.Struct(reflect.TypeFor[S]())
 		if err == nil {
 			t.Fatal("expected error for min on bool field")
 		}
@@ -205,7 +205,7 @@ func TestStruct_RuleCompatibilityErrors(t *testing.T) {
 		type S struct {
 			Name string `json:"name" validate:"minItems=1"`
 		}
-		_, err := validation.Struct(reflect.TypeOf(S{}))
+		_, err := validation.Struct(reflect.TypeFor[S]())
 		if err == nil {
 			t.Fatal("expected error for minItems on string field")
 		}
@@ -215,7 +215,7 @@ func TestStruct_RuleCompatibilityErrors(t *testing.T) {
 		type S struct {
 			Age int `json:"age" validate:"email"`
 		}
-		_, err := validation.Struct(reflect.TypeOf(S{}))
+		_, err := validation.Struct(reflect.TypeFor[S]())
 		if err == nil {
 			t.Fatal("expected error for email on int field")
 		}

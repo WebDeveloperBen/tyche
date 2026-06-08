@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"go/types"
+	"slices"
 	"sort"
 	"strconv"
 
@@ -658,12 +659,7 @@ func generatedBodyNeedsStrconv(body *BodyBindSpec) bool {
 	if body.Direct != nil {
 		return bodyFieldNeedsStrconv(*body.Direct)
 	}
-	for _, field := range body.Fields {
-		if bodyFieldNeedsStrconv(field) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(body.Fields, bodyFieldNeedsStrconv)
 }
 
 func bodyFieldNeedsStrconv(field BodyFieldSpec) bool {

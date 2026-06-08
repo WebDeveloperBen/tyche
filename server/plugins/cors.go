@@ -3,6 +3,7 @@ package plugins
 import (
 	"errors"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -54,13 +55,7 @@ func CORS(cfg ...CORSConfig) (server.ServeHTTPMiddleware, error) {
 
 func newCORS(c CORSConfig) (server.ServeHTTPMiddleware, error) {
 	if c.AllowCredentials {
-		hasWildcard := false
-		for _, origin := range c.AllowedOrigins {
-			if origin == "*" {
-				hasWildcard = true
-				break
-			}
-		}
+		hasWildcard := slices.Contains(c.AllowedOrigins, "*")
 		if hasWildcard {
 			return nil, ErrCORSWildcardWithCredentials
 		}

@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -732,11 +733,11 @@ func (w *trackedResponseWriter) Push(target string, opts *http.PushOptions) erro
 func (r *Router) wrapHandler(fn HandlerFunc, g *Group, routeMW []Middleware) HandlerFunc {
 	stack := g.middlewareChain()
 	wrapped := fn
-	for i := len(routeMW) - 1; i >= 0; i-- {
-		wrapped = routeMW[i](wrapped)
+	for _, r := range slices.Backward(routeMW) {
+		wrapped = r(wrapped)
 	}
-	for i := len(stack) - 1; i >= 0; i-- {
-		wrapped = stack[i](wrapped)
+	for _, s := range slices.Backward(stack) {
+		wrapped = s(wrapped)
 	}
 	return wrapped
 }
@@ -749,8 +750,8 @@ func (r *Router) rebuildHandlers() {
 
 func (r *Router) rebuildServeHTTPHandler() {
 	var handler http.Handler = http.HandlerFunc(r.serveHTTP)
-	for i := len(r.serveHTTPMiddlewares) - 1; i >= 0; i-- {
-		handler = r.serveHTTPMiddlewares[i](handler)
+	for _, v := range slices.Backward(r.serveHTTPMiddlewares) {
+		handler = v(handler)
 	}
 	r.serveHTTPHandler = handler
 }

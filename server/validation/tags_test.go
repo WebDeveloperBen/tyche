@@ -34,7 +34,7 @@ func TestJSONFieldName(t *testing.T) {
 		NoTag     string
 		EmptyName string `json:",omitempty"` // name falls back to field name
 	}
-	typ := reflect.TypeOf(S{})
+	typ := reflect.TypeFor[S]()
 
 	tests := []struct {
 		field    string
@@ -83,18 +83,18 @@ func TestHasTagOption(t *testing.T) {
 
 func TestFieldRequired(t *testing.T) {
 	type S struct {
-		PathID     string  `path:"id"`
-		QueryReq   string  `query:"q" required:"true"`
-		QueryOpt   *string `query:"page"`
-		QueryOmit  string  `query:"limit,omitempty"`
-		JSONReq    string  `json:"name"`
-		JSONOpt    *string `json:"bio"`
-		JSONOmit   string  `json:"role,omitempty"`
-		ValidOmit  string  `json:"tag" validate:"omitempty"`
-		ExplFalse  string  `json:"ef" required:"false"`
-		ExplTrue   *string `json:"et" required:"true"` // pointer but explicitly required
+		PathID    string  `path:"id"`
+		QueryReq  string  `query:"q" required:"true"`
+		QueryOpt  *string `query:"page"`
+		QueryOmit string  `query:"limit,omitempty"`
+		JSONReq   string  `json:"name"`
+		JSONOpt   *string `json:"bio"`
+		JSONOmit  string  `json:"role,omitempty"`
+		ValidOmit string  `json:"tag" validate:"omitempty"`
+		ExplFalse string  `json:"ef" required:"false"`
+		ExplTrue  *string `json:"et" required:"true"` // pointer but explicitly required
 	}
-	typ := reflect.TypeOf(S{})
+	typ := reflect.TypeFor[S]()
 
 	tests := []struct {
 		field  string
@@ -106,11 +106,11 @@ func TestFieldRequired(t *testing.T) {
 		{"QueryOpt", "query", false},  // pointer
 		{"QueryOmit", "query", false}, // omitempty option
 		{"JSONReq", "json", true},
-		{"JSONOpt", "json", false},  // pointer
-		{"JSONOmit", "json", false}, // omitempty option
-		{"ValidOmit", "json", false},  // validate:"omitempty"
-		{"ExplFalse", "json", false},  // required:"false"
-		{"ExplTrue", "json", true},    // required:"true" overrides pointer
+		{"JSONOpt", "json", false},   // pointer
+		{"JSONOmit", "json", false},  // omitempty option
+		{"ValidOmit", "json", false}, // validate:"omitempty"
+		{"ExplFalse", "json", false}, // required:"false"
+		{"ExplTrue", "json", true},   // required:"true" overrides pointer
 	}
 	for _, tt := range tests {
 		t.Run(tt.field, func(t *testing.T) {
@@ -127,18 +127,18 @@ func TestFieldRequired(t *testing.T) {
 }
 
 func TestFieldRequiredFromTag(t *testing.T) {
-	strType := reflect.TypeOf("")
-	ptrType := reflect.TypeOf((*string)(nil))
+	strType := reflect.TypeFor[string]()
+	ptrType := reflect.TypeFor[*string]()
 
 	tests := []struct {
 		tag  string
 		typ  reflect.Type
 		want bool
 	}{
-		{"name", strType, true},           // non-pointer, no omitempty
+		{"name", strType, true},            // non-pointer, no omitempty
 		{"name,omitempty", strType, false}, // omitempty present
-		{"name", ptrType, false},          // pointer type
-		{"", strType, true},               // no tag, non-pointer
+		{"name", ptrType, false},           // pointer type
+		{"", strType, true},                // no tag, non-pointer
 	}
 	for _, tt := range tests {
 		got := validation.FieldRequiredFromTag(tt.tag, tt.typ)

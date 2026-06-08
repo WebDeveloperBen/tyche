@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"net/http"
+	"slices"
 )
 
 // MiddlewareFunc is an inline middleware signature that receives the next
@@ -45,8 +46,8 @@ func MiddlewareFromFunc(fn MiddlewareFunc) Middleware {
 //	))
 func Chain(mw ...Middleware) Middleware {
 	return func(next HandlerFunc) HandlerFunc {
-		for i := len(mw) - 1; i >= 0; i-- {
-			next = mw[i](next)
+		for _, m := range slices.Backward(mw) {
+			next = m(next)
 		}
 		return next
 	}
