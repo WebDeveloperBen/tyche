@@ -1,0 +1,35 @@
+# golangci-lint v2 configuration.
+#
+# `default: standard` enables errcheck, govet, ineffassign, staticcheck, and
+# unused — the set the project is kept clean against. Generated code and the
+# servergen code emitters are excluded from style/perf linters: the emitters
+# build Go source by string concatenation, which trips "inefficient string
+# concatenation"-style checks, but the cost is irrelevant for code that runs
+# once at build time and the concatenated form is far more readable.
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: standard
+
+  exclusions:
+    # Skip files marked "// Code generated ... DO NOT EDIT".
+    generated: lax
+
+    # Whole-file/path exclusions (regex, matched against the file path).
+    paths:
+      - servergen/testdata
+      - '.*_gen\.go$'
+
+    # Scoped exclusions: exempt the servergen code emitters from perf/style
+    # linters that would flag intentional string-building in generated output.
+    # These linters are not in the default set today; the rules keep the
+    # codegen exempt if the set is ever broadened.
+    rules:
+      - path: servergen/(generator|generator_emit|generator_analysis)\.go
+        linters:
+          - perfsprint
+          - gocritic
+          - gosec

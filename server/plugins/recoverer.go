@@ -66,11 +66,12 @@ func (m *recovererMiddleware) Middleware() server.Middleware {
 				if rec := recover(); rec != nil {
 					var buf []byte
 					func() {
-						defer func() { recover() }()
+						defer func() { _ = recover() }()
 						buf = debug.Stack()
 					}()
 					if m.logger != nil {
-						m.logger.Error("panic recovered",
+						m.logger.Error(
+							"panic recovered",
 							"error", fmt.Sprintf("%v", rec),
 							"stack", string(buf),
 							"method", r.Method,

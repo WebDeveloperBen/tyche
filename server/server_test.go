@@ -13,7 +13,7 @@ import (
 func TestServer_Basic(t *testing.T) {
 	router := server.NewRouter()
 	router.GET("/test", func(w http.ResponseWriter, r *http.Request) error {
-		w.Write([]byte("OK"))
+		_, _ = w.Write([]byte("OK"))
 		return nil
 	})
 
@@ -25,7 +25,7 @@ func TestServer_Basic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to make request: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("expected status 200, got %d", resp.StatusCode)
@@ -46,7 +46,7 @@ func TestServer_DefaultConfig(t *testing.T) {
 func TestServer_ListenAndServeTLS(t *testing.T) {
 	router := server.NewRouter()
 	router.GET("/test", func(w http.ResponseWriter, r *http.Request) error {
-		w.Write([]byte("OK"))
+		_, _ = w.Write([]byte("OK"))
 		return nil
 	})
 
@@ -61,11 +61,11 @@ func TestServer_ListenAndServeTLS(t *testing.T) {
 	srv := server.New(cfg, router)
 
 	go func() {
-		srv.ListenAndServeTLS("testdata/cert.pem", "testdata/key.pem")
+		_ = srv.ListenAndServeTLS("testdata/cert.pem", "testdata/key.pem")
 	}()
 	time.Sleep(100 * time.Millisecond)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
-	srv.Shutdown(ctx)
+	_ = srv.Shutdown(ctx)
 }

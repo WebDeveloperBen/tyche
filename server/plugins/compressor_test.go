@@ -23,7 +23,7 @@ func TestCompressor(t *testing.T) {
 
 		r.GET("/test", func(w http.ResponseWriter, r *http.Request) error {
 			w.Header().Set("Content-Type", "text/plain")
-			w.Write([]byte("Hello, World!"))
+			_, _ = w.Write([]byte("Hello, World!"))
 			return nil
 		})
 
@@ -42,7 +42,7 @@ func TestCompressor(t *testing.T) {
 
 		r.GET("/test", func(w http.ResponseWriter, r *http.Request) error {
 			w.Header().Set("Content-Type", "text/plain")
-			w.Write([]byte("Hello, World!"))
+			_, _ = w.Write([]byte("Hello, World!"))
 			return nil
 		})
 
@@ -63,7 +63,7 @@ func TestCompressor(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to create gzip reader: %v", err)
 		}
-		defer gr.Close()
+		defer func() { _ = gr.Close() }()
 
 		data, err := io.ReadAll(gr)
 		if err != nil {
@@ -81,7 +81,7 @@ func TestCompressor(t *testing.T) {
 
 		r.GET("/test", func(w http.ResponseWriter, r *http.Request) error {
 			w.Header().Set("Content-Type", "text/plain")
-			w.Write([]byte("Hello, World!"))
+			_, _ = w.Write([]byte("Hello, World!"))
 			return nil
 		})
 
@@ -111,7 +111,7 @@ func TestCompressor(t *testing.T) {
 
 		r.GET("/test", func(w http.ResponseWriter, r *http.Request) error {
 			w.Header().Set("Content-Type", "text/plain")
-			w.Write([]byte("Hello, World!"))
+			_, _ = w.Write([]byte("Hello, World!"))
 			return nil
 		})
 
@@ -171,7 +171,7 @@ func TestCompressor(t *testing.T) {
 
 		r.GET("/test", func(w http.ResponseWriter, r *http.Request) error {
 			w.Header().Set("Content-Type", "application/octet-stream")
-			w.Write([]byte("binary data"))
+			_, _ = w.Write([]byte("binary data"))
 			return nil
 		})
 
@@ -197,7 +197,7 @@ func TestCompressor(t *testing.T) {
 
 		r.GET("/test", func(w http.ResponseWriter, r *http.Request) error {
 			w.Header().Set("Content-Type", "text/html")
-			w.Write([]byte("<html>test</html>"))
+			_, _ = w.Write([]byte("<html>test</html>"))
 			return nil
 		})
 
@@ -218,7 +218,7 @@ func TestCompressor(t *testing.T) {
 		r.GET("/test", func(w http.ResponseWriter, r *http.Request) error {
 			w.Header().Set("Content-Type", "text/plain")
 			w.Header().Set("Content-Encoding", "identity")
-			w.Write([]byte("Hello"))
+			_, _ = w.Write([]byte("Hello"))
 			return nil
 		})
 
@@ -238,7 +238,7 @@ func TestCompressor(t *testing.T) {
 
 		r.GET("/test", func(w http.ResponseWriter, r *http.Request) error {
 			w.Header().Set("Content-Type", "text/plain")
-			w.Write([]byte("chunk1"))
+			_, _ = w.Write([]byte("chunk1"))
 			if f, ok := w.(http.Flusher); ok {
 				f.Flush()
 			}
@@ -278,7 +278,7 @@ func TestCompressor(t *testing.T) {
 
 		r.GET("/test", func(w http.ResponseWriter, r *http.Request) error {
 			w.Header().Set("Content-Type", "text/plain")
-			w.Write([]byte("Hello, World! This is more than 10 bytes."))
+			_, _ = w.Write([]byte("Hello, World! This is more than 10 bytes."))
 			return nil
 		})
 
@@ -304,7 +304,7 @@ func TestCompressor(t *testing.T) {
 
 		r.GET("/test", func(w http.ResponseWriter, r *http.Request) error {
 			w.Header().Set("Content-Type", "text/plain")
-			w.Write([]byte("Hello, World! This is more than 10 bytes."))
+			_, _ = w.Write([]byte("Hello, World! This is more than 10 bytes."))
 			return nil
 		})
 
@@ -330,7 +330,7 @@ func TestCompressor(t *testing.T) {
 
 		r.GET("/test", func(w http.ResponseWriter, r *http.Request) error {
 			w.Header().Set("Content-Type", "text/plain")
-			w.Write([]byte("Hi"))
+			_, _ = w.Write([]byte("Hi"))
 			return nil
 		})
 
@@ -343,7 +343,7 @@ func TestCompressor(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to create gzip reader: %v", err)
 		}
-		defer gr.Close()
+		defer func() { _ = gr.Close() }()
 
 		data, err := io.ReadAll(gr)
 		if err != nil {

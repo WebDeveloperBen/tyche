@@ -39,12 +39,14 @@ type node struct {
 }
 
 type routeHandler struct {
-	fn        HandlerFunc
-	params    []string
-	wildcard  string
-	group     *Group
-	routeMW   []Middleware
-	wrappedFn HandlerFunc
+	fn           HandlerFunc
+	route        string
+	params       []string
+	wildcard     string
+	group        *Group
+	routeMW      []Middleware
+	maxBodyBytes *int64
+	wrappedFn    HandlerFunc
 }
 
 const (
@@ -300,13 +302,13 @@ func (n *node) hasAnyHandler() bool {
 	return false
 }
 
-func (n *node) setHandler(method, route string, fn HandlerFunc, params []string, wildcard string, group *Group, routeMW []Middleware, wrappedFn HandlerFunc) error {
+func (n *node) setHandler(method, route string, fn HandlerFunc, params []string, wildcard string, group *Group, routeMW []Middleware, maxBodyBytes *int64, wrappedFn HandlerFunc) error {
 	idx := MethodIndex(method)
 	if idx >= 0 {
 		if n.handlers[idx] != nil {
 			return fmt.Errorf("duplicate route handler registered for %s %s", method, route)
 		}
-		n.handlers[idx] = &routeHandler{fn: fn, params: params, wildcard: wildcard, group: group, routeMW: routeMW, wrappedFn: wrappedFn}
+		n.handlers[idx] = &routeHandler{fn: fn, route: route, params: params, wildcard: wildcard, group: group, routeMW: routeMW, maxBodyBytes: maxBodyBytes, wrappedFn: wrappedFn}
 	}
 	return nil
 }

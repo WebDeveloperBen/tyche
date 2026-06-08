@@ -19,8 +19,10 @@ import (
 
 const bufferedResponseMemoryLimit int64 = 1 << 20
 
-var errCompressedSizeLimitExceeded = errors.New("compressed output exceeds configured size limit")
-var errBufferedResponseLimitExceeded = errors.New("buffered response exceeds configured size limit")
+var (
+	errCompressedSizeLimitExceeded   = errors.New("compressed output exceeds configured size limit")
+	errBufferedResponseLimitExceeded = errors.New("buffered response exceeds configured size limit")
+)
 
 type CompressorConfig struct {
 	Level                   int
@@ -128,7 +130,7 @@ func (m *compressorMiddleware) Middleware() server.Middleware {
 
 			if useBuffer {
 				cw.body = newSpillBuffer(bufferedResponseMemoryLimit, m.maxBufferedResponseSize)
-				defer cw.body.Close()
+				defer func() { _ = cw.body.Close() }()
 			}
 
 			if !useBuffer && encoding != "" {
@@ -321,7 +323,7 @@ func (m *compressorMiddleware) selectEncoding(header string) (string, bool) {
 
 	prefs := acceptEncodingPrefs{}
 
-	for _, part := range strings.Split(strings.ToLower(header), ",") {
+	for part := range strings.SplitSeq(strings.ToLower(header), ",") {
 		token, params, _ := strings.Cut(strings.TrimSpace(part), ";")
 		token = strings.TrimSpace(token)
 		if token != "br" && token != "gzip" && token != "*" && token != "identity" {
@@ -330,7 +332,7 @@ func (m *compressorMiddleware) selectEncoding(header string) (string, bool) {
 
 		q := 1.0
 		if params != "" {
-			for _, param := range strings.Split(params, ";") {
+			for param := range strings.SplitSeq(params, ";") {
 				key, value, ok := strings.Cut(strings.TrimSpace(param), "=")
 				if !ok || strings.TrimSpace(key) != "q" {
 					continue
@@ -378,7 +380,6 @@ func (m *compressorMiddleware) selectEncoding(header string) (string, bool) {
 	gzipQ := candidateQ(prefs.gzip, prefs.hasGzip)
 	if gzipQ > bestQ || (gzipQ == bestQ && gzipQ > 0 && bestEncoding == "") {
 		bestEncoding = "gzip"
-		bestQ = gzipQ
 	}
 
 	identityQ := 1.0
@@ -681,41 +682,13 @@ func setCompressedHeaders(header http.Header, encoding string, contentLength int
 
 func addVaryAcceptEncoding(header http.Header) {
 	for _, value := range header.Values("Vary") {
-		for _, part := range strings.Split(value, ",") {
+		for part := range strings.SplitSeq(value, ",") {
 			if strings.EqualFold(strings.TrimSpace(part), "Accept-Encoding") {
 				return
 			}
 		}
 	}
 	header.Add("Vary", "Accept-Encoding")
-}
-
-func removeVaryAcceptEncoding(header http.Header) {
-	values := header.Values("Vary")
-	if len(values) == 0 {
-		return
-	}
-
-	rebuilt := make([]string, 0, len(values))
-	for _, value := range values {
-		parts := strings.Split(value, ",")
-		filtered := make([]string, 0, len(parts))
-		for _, part := range parts {
-			part = strings.TrimSpace(part)
-			if part == "" || strings.EqualFold(part, "Accept-Encoding") {
-				continue
-			}
-			filtered = append(filtered, part)
-		}
-		if len(filtered) > 0 {
-			rebuilt = append(rebuilt, strings.Join(filtered, ", "))
-		}
-	}
-
-	header.Del("Vary")
-	for _, value := range rebuilt {
-		header.Add("Vary", value)
-	}
 }
 
 func statusAllowsCompression(status int) bool {
@@ -826,10 +799,7 @@ func (b *spillBuffer) DetectContentType() (string, error) {
 	if b.size == 0 {
 		return "", nil
 	}
-	sniffLen := int(b.size)
-	if sniffLen > 512 {
-		sniffLen = 512
-	}
+	sniffLen := min(int(b.size), 512)
 	if b.file == nil {
 		return http.DetectContentType(b.mem.Bytes()[:sniffLen]), nil
 	}

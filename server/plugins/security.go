@@ -97,18 +97,6 @@ func SecurityWithDefaults() server.ServeHTTPMiddleware {
 	return Security(SecurityConfig{})
 }
 
-type securityMiddleware struct {
-	config SecurityConfig
-}
-
-func (m *securityMiddleware) Register(r *server.Router) {
-	r.UseServeHTTP(m.Middleware())
-}
-
-func (m *securityMiddleware) Middleware() server.ServeHTTPMiddleware {
-	return Security(m.config)
-}
-
 func SecurityMiddleware(cfg ...SecurityConfig) server.ServeHTTPMiddleware {
 	return Security(cfg...)
 }

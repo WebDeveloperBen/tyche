@@ -12,7 +12,7 @@ func TestRouter_Params(t *testing.T) {
 	router := server.NewRouter()
 
 	router.GET("/users/:id", func(w http.ResponseWriter, r *http.Request) error {
-		w.Write([]byte(server.Param(r, "id")))
+		_, _ = w.Write([]byte(server.Param(r, "id")))
 		return nil
 	})
 
@@ -45,7 +45,7 @@ func TestRouter_ParamHelper(t *testing.T) {
 	router := server.NewRouter()
 
 	router.GET("/users/:id", func(w http.ResponseWriter, r *http.Request) error {
-		w.Write([]byte(server.Param(r, "id")))
+		_, _ = w.Write([]byte(server.Param(r, "id")))
 		return nil
 	})
 
@@ -65,7 +65,7 @@ func TestRouter_MultipleParams(t *testing.T) {
 	router := server.NewRouter()
 
 	router.GET("/users/:userId/posts/:postId", func(w http.ResponseWriter, r *http.Request) error {
-		w.Write([]byte(server.Param(r, "userId") + "-" + server.Param(r, "postId")))
+		_, _ = w.Write([]byte(server.Param(r, "userId") + "-" + server.Param(r, "postId")))
 		return nil
 	})
 
@@ -85,7 +85,7 @@ func TestRouter_ParamAtStart(t *testing.T) {
 	router := server.NewRouter()
 
 	router.GET("/:resource", func(w http.ResponseWriter, r *http.Request) error {
-		w.Write([]byte(server.Param(r, "resource")))
+		_, _ = w.Write([]byte(server.Param(r, "resource")))
 		return nil
 	})
 
@@ -105,7 +105,7 @@ func TestRouter_ParamWithHyphen(t *testing.T) {
 	router := server.NewRouter()
 
 	router.GET("/users/:user-id", func(w http.ResponseWriter, r *http.Request) error {
-		w.Write([]byte(server.Param(r, "user-id")))
+		_, _ = w.Write([]byte(server.Param(r, "user-id")))
 		return nil
 	})
 
@@ -125,7 +125,7 @@ func TestRouter_Wildcard(t *testing.T) {
 	router := server.NewRouter()
 
 	router.GET("/files/*", func(w http.ResponseWriter, r *http.Request) error {
-		w.Write([]byte(server.Wildcard(r)))
+		_, _ = w.Write([]byte(server.Wildcard(r)))
 		return nil
 	})
 
@@ -158,7 +158,7 @@ func TestRouter_WildcardHelper(t *testing.T) {
 	router := server.NewRouter()
 
 	router.GET("/files/*", func(w http.ResponseWriter, r *http.Request) error {
-		w.Write([]byte(server.Wildcard(r)))
+		_, _ = w.Write([]byte(server.Wildcard(r)))
 		return nil
 	})
 
@@ -178,7 +178,7 @@ func TestRouter_NamedWildcardHelper(t *testing.T) {
 	router := server.NewRouter()
 
 	router.GET("/files/*path", func(w http.ResponseWriter, r *http.Request) error {
-		w.Write([]byte(server.Param(r, "path") + ":" + server.Wildcard(r)))
+		_, _ = w.Write([]byte(server.Param(r, "path") + ":" + server.Wildcard(r)))
 		return nil
 	})
 
@@ -209,7 +209,7 @@ func TestRouter_MixedParamsAndWildcard(t *testing.T) {
 	router := server.NewRouter()
 
 	router.GET("/api/v1/:version/*path", func(w http.ResponseWriter, r *http.Request) error {
-		w.Write([]byte(server.Param(r, "version") + ":" + server.Wildcard(r)))
+		_, _ = w.Write([]byte(server.Param(r, "version") + ":" + server.Wildcard(r)))
 		return nil
 	})
 
@@ -229,11 +229,11 @@ func TestRouter_PriorityStaticOverParam(t *testing.T) {
 	router := server.NewRouter()
 
 	router.GET("/users", func(w http.ResponseWriter, r *http.Request) error {
-		w.Write([]byte("users list"))
+		_, _ = w.Write([]byte("users list"))
 		return nil
 	})
 	router.GET("/users/:id", func(w http.ResponseWriter, r *http.Request) error {
-		w.Write([]byte("user " + server.Param(r, "id")))
+		_, _ = w.Write([]byte("user " + server.Param(r, "id")))
 		return nil
 	})
 
@@ -264,7 +264,7 @@ func TestRouter_DeepNesting(t *testing.T) {
 	router := server.NewRouter()
 
 	router.GET("/a/b/c/d/e", func(w http.ResponseWriter, r *http.Request) error {
-		w.Write([]byte("deep"))
+		_, _ = w.Write([]byte("deep"))
 		return nil
 	})
 
@@ -336,7 +336,7 @@ func TestRouter_AdjacentParamSegments(t *testing.T) {
 	router := server.NewRouter()
 
 	router.GET("/:a:b", func(w http.ResponseWriter, r *http.Request) error {
-		w.Write([]byte(server.Param(r, "a") + "-" + server.Param(r, "b")))
+		_, _ = w.Write([]byte(server.Param(r, "a") + "-" + server.Param(r, "b")))
 		return nil
 	})
 
@@ -353,7 +353,7 @@ func TestRouter_EmptySegments(t *testing.T) {
 	router := server.NewRouter()
 
 	router.GET("/users//posts", func(w http.ResponseWriter, r *http.Request) error {
-		w.Write([]byte("success"))
+		_, _ = w.Write([]byte("success"))
 		return nil
 	})
 
@@ -370,7 +370,7 @@ func TestRouter_RootHandler(t *testing.T) {
 	router := server.NewRouter()
 
 	router.GET("/", func(w http.ResponseWriter, r *http.Request) error {
-		w.Write([]byte("home"))
+		_, _ = w.Write([]byte("home"))
 		return nil
 	})
 
@@ -430,7 +430,7 @@ func TestRouter_MultipleParamValues(t *testing.T) {
 	router := server.NewRouter()
 
 	router.GET("/users/:id/posts/:postId/comments/:commentId", func(w http.ResponseWriter, r *http.Request) error {
-		w.Write([]byte(server.Param(r, "id") + "/" + server.Param(r, "postId") + "/" + server.Param(r, "commentId")))
+		_, _ = w.Write([]byte(server.Param(r, "id") + "/" + server.Param(r, "postId") + "/" + server.Param(r, "commentId")))
 		return nil
 	})
 
@@ -450,7 +450,7 @@ func TestRouter_WildcardWithSlashOnly(t *testing.T) {
 	router := server.NewRouter()
 
 	router.GET("/static/*", func(w http.ResponseWriter, r *http.Request) error {
-		w.Write([]byte(server.Wildcard(r)))
+		_, _ = w.Write([]byte(server.Wildcard(r)))
 		return nil
 	})
 

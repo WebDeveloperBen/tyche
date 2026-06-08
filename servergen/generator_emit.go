@@ -6,49 +6,78 @@ import (
 	"go/types"
 	"sort"
 	"strconv"
-	"strings"
 
 	"github.com/webdeveloperben/tyche/server/validation"
 )
 
 func writeParseBody(buf *bytes.Buffer, route RouteSpec) {
 	if !route.InputBind.Manual {
-		buf.WriteString("\t\t\treturn serverpkg.ParseRequest[" + route.InputType + "](req)\n")
+		buf.WriteString("\t\t\treturn serverpkg.ParseRequest[")
+		buf.WriteString(route.InputType)
+		buf.WriteString("](req)\n")
 		return
 	}
 
-	buf.WriteString("\t\t\tvar in " + route.InputType + "\n")
+	buf.WriteString("\t\t\tvar in ")
+	buf.WriteString(route.InputType)
+	buf.WriteString("\n")
 	buf.WriteString("\t\t\tvar validationErr serverpkg.ValidationError\n")
 	for _, field := range route.InputBind.Fields {
 		rawVar := "raw_" + field.FieldName
 		pointer := validation.JSONPointer(field.Source, field.ParamName)
 		switch field.Source {
 		case "path":
-			buf.WriteString("\t\t\t" + rawVar + " := req.PathValue(" + strconv.Quote(field.ParamName) + ")\n")
+			buf.WriteString("\t\t\t")
+			buf.WriteString(rawVar)
+			buf.WriteString(" := req.PathValue(")
+			buf.WriteString(strconv.Quote(field.ParamName))
+			buf.WriteString(")\n")
 			if field.Required {
-				buf.WriteString("\t\t\tif " + rawVar + " == \"\" {\n")
-				buf.WriteString("\t\t\t\tvalidationErr.AddRequired(" + strconv.Quote(pointer) + ")\n")
+				buf.WriteString("\t\t\tif ")
+				buf.WriteString(rawVar)
+				buf.WriteString(" == \"\" {\n")
+				buf.WriteString("\t\t\t\tvalidationErr.AddRequired(")
+				buf.WriteString(strconv.Quote(pointer))
+				buf.WriteString(")\n")
 				buf.WriteString("\t\t\t}\n")
 			}
 			writeBindAssign(buf, "in."+field.FieldName, rawVar, field, pointer)
 		case "query":
-			buf.WriteString("\t\t\t" + rawVar + " := req.URL.Query().Get(" + strconv.Quote(field.ParamName) + ")\n")
+			buf.WriteString("\t\t\t")
+			buf.WriteString(rawVar)
+			buf.WriteString(" := req.URL.Query().Get(")
+			buf.WriteString(strconv.Quote(field.ParamName))
+			buf.WriteString(")\n")
 			if field.Required {
-				buf.WriteString("\t\t\tif " + rawVar + " == \"\" {\n")
-				buf.WriteString("\t\t\t\tvalidationErr.AddRequired(" + strconv.Quote(pointer) + ")\n")
+				buf.WriteString("\t\t\tif ")
+				buf.WriteString(rawVar)
+				buf.WriteString(" == \"\" {\n")
+				buf.WriteString("\t\t\t\tvalidationErr.AddRequired(")
+				buf.WriteString(strconv.Quote(pointer))
+				buf.WriteString(")\n")
 				buf.WriteString("\t\t\t}\n")
 			}
 			writeBindAssign(buf, "in."+field.FieldName, rawVar, field, pointer)
 		case "header":
-			buf.WriteString("\t\t\t" + rawVar + " := req.Header.Get(" + strconv.Quote(field.ParamName) + ")\n")
+			buf.WriteString("\t\t\t")
+			buf.WriteString(rawVar)
+			buf.WriteString(" := req.Header.Get(")
+			buf.WriteString(strconv.Quote(field.ParamName))
+			buf.WriteString(")\n")
 			if field.Required {
-				buf.WriteString("\t\t\tif " + rawVar + " == \"\" {\n")
-				buf.WriteString("\t\t\t\tvalidationErr.AddRequired(" + strconv.Quote(pointer) + ")\n")
+				buf.WriteString("\t\t\tif ")
+				buf.WriteString(rawVar)
+				buf.WriteString(" == \"\" {\n")
+				buf.WriteString("\t\t\t\tvalidationErr.AddRequired(")
+				buf.WriteString(strconv.Quote(pointer))
+				buf.WriteString(")\n")
 				buf.WriteString("\t\t\t}\n")
 			}
 			writeBindAssign(buf, "in."+field.FieldName, rawVar, field, pointer)
 		case "cookie":
-			buf.WriteString("\t\t\tvar " + rawVar + " string\n")
+			buf.WriteString("\t\t\tvar ")
+			buf.WriteString(rawVar)
+			buf.WriteString(" string\n")
 			buf.WriteString("\t\t\tif cookie, err := req.Cookie(" + strconv.Quote(field.ParamName) + "); err == nil && cookie != nil {\n")
 			buf.WriteString("\t\t\t\t" + rawVar + " = cookie.Value\n")
 			buf.WriteString("\t\t\t} else if err != nil && !errors.Is(err, http.ErrNoCookie) {\n")
@@ -217,153 +246,6 @@ func writeStrictWholeBodyParse(buf *bytes.Buffer, body *BodyBindSpec) {
 	buf.WriteString("); err != nil { return nil, err }\n")
 }
 
-func writeStreamBodyParse(buf *bytes.Buffer, body *BodyBindSpec) {
-	const indent = "\t\t\t"
-	for _, field := range body.Fields {
-		if field.Required {
-			buf.WriteString(indent + "var seen_body_" + field.FieldName + " bool\n")
-		}
-	}
-	buf.WriteString(indent + "if err := serverpkg.ValidateJSONContentType(req.Header.Get(\"Content-Type\")); err != nil { return nil, err }\n")
-	buf.WriteString(indent + "if req.Body == nil {\n")
-	if body.Required {
-		buf.WriteString(indent + "\tvalidationErr.AddRequired(\"\")\n")
-		buf.WriteString(indent + "\treturn nil, &validationErr\n")
-	} else {
-		buf.WriteString(indent + "\treturn &in, nil\n")
-	}
-	buf.WriteString(indent + "}\n")
-	buf.WriteString(indent + "dec := json.NewDecoder(req.Body)\n")
-	buf.WriteString(indent + "tok, err := dec.Token()\n")
-	buf.WriteString(indent + "if err != nil {\n")
-	buf.WriteString(indent + "\tif errors.Is(err, io.EOF) {\n")
-	if body.Required {
-		buf.WriteString(indent + "\t\tvalidationErr.AddRequired(\"\")\n")
-		buf.WriteString(indent + "\t\treturn nil, &validationErr\n")
-	} else {
-		buf.WriteString(indent + "\t\treturn &in, nil\n")
-	}
-	buf.WriteString(indent + "\t}\n")
-	buf.WriteString(indent + "\treturn nil, fmt.Errorf(\"failed to decode body: %w\", err)\n")
-	buf.WriteString(indent + "}\n")
-	buf.WriteString(indent + "delim, ok := tok.(json.Delim)\n")
-	buf.WriteString(indent + "if !ok || delim != '{' { return nil, fmt.Errorf(\"failed to decode body: expected object\") }\n")
-	writeStreamObject(buf, body.Fields, body.Target, indent, "body", strconv.Quote(""))
-	buf.WriteString(indent + "if _, err := dec.Token(); err != nil { return nil, fmt.Errorf(\"failed to decode body: %w\", err) }\n")
-	buf.WriteString(indent + "if err := serverpkg.EnsureSingleJSONValue(dec); err != nil { return nil, err }\n")
-	for _, field := range body.Fields {
-		if field.Required {
-			buf.WriteString(indent + "if !seen_body_" + field.FieldName + " { validationErr.AddRequired(serverpkg.JoinValidationPointer(" + strconv.Quote("") + ", " + strconv.Quote(field.JSONName) + ")); return nil, &validationErr }\n")
-		}
-	}
-}
-
-func writeStreamObject(buf *bytes.Buffer, fields []BodyFieldSpec, targetPrefix, indent, pathPrefix, pointerBaseExpr string) {
-	buf.WriteString(indent + "for dec.More() {\n")
-	buf.WriteString(indent + "\tkeyTok, err := dec.Token()\n")
-	buf.WriteString(indent + "\tif err != nil { return nil, fmt.Errorf(\"failed to decode body: %w\", err) }\n")
-	buf.WriteString(indent + "\tswitch keyTok.(string) {\n")
-	for _, field := range fields {
-		fieldPointerExpr := "serverpkg.JoinValidationPointer(" + pointerBaseExpr + ", " + strconv.Quote(field.JSONName) + ")"
-		writeStreamField(buf, field, targetPrefix+field.FieldName, indent+"\t", pathPrefix+"_"+field.FieldName, fieldPointerExpr)
-	}
-	buf.WriteString(indent + "\tdefault:\n")
-	buf.WriteString(indent + "\t\treturn nil, fmt.Errorf(\"failed to decode body: json: unknown field %q\", keyTok.(string))\n")
-	buf.WriteString(indent + "\t}\n")
-	buf.WriteString(indent + "}\n")
-}
-
-func writeStreamField(buf *bytes.Buffer, field BodyFieldSpec, target, indent, pathKey, pointerExpr string) {
-	buf.WriteString(indent + "case " + strconv.Quote(field.JSONName) + ":\n")
-	if field.Required {
-		buf.WriteString(indent + "\tseen_" + pathKey + " = true\n")
-	}
-	switch {
-	case field.Nested != nil:
-		writeStreamNestedField(buf, field, target, indent+"\t", pathKey, pointerExpr)
-	case field.Slice:
-		writeStreamSliceField(buf, field, target, indent+"\t", pathKey, pointerExpr)
-	default:
-		buf.WriteString(indent + "\tif err := dec.Decode(&" + target + "); err != nil { return nil, fmt.Errorf(\"failed to decode body: %w\", err) }\n")
-		writeBodyValidation(buf, target, pointerExpr, field, indent+"\t")
-	}
-}
-
-func writeStreamNestedField(buf *bytes.Buffer, field BodyFieldSpec, target, indent, pathKey, pointerExpr string) {
-	if field.Pointer {
-		buf.WriteString(indent + target + " = &" + field.NestedType + "{}\n")
-		buf.WriteString(indent + "tok, err := dec.Token()\n")
-		buf.WriteString(indent + "if err != nil { return nil, fmt.Errorf(\"failed to decode body: %w\", err) }\n")
-		buf.WriteString(indent + "delim, ok := tok.(json.Delim)\n")
-		buf.WriteString(indent + "if !ok || delim != '{' { return nil, fmt.Errorf(\"failed to decode body: expected object\") }\n")
-		writeStreamNestedObject(buf, field.Nested.Fields, "(*"+target+").", indent, pathKey, pointerExpr)
-		return
-	}
-	buf.WriteString(indent + "tok, err := dec.Token()\n")
-	buf.WriteString(indent + "if err != nil { return nil, fmt.Errorf(\"failed to decode body: %w\", err) }\n")
-	buf.WriteString(indent + "delim, ok := tok.(json.Delim)\n")
-	buf.WriteString(indent + "if !ok || delim != '{' { return nil, fmt.Errorf(\"failed to decode body: expected object\") }\n")
-	writeStreamNestedObject(buf, field.Nested.Fields, target+".", indent, pathKey, pointerExpr)
-}
-
-func writeStreamNestedObject(buf *bytes.Buffer, fields []BodyFieldSpec, targetPrefix, indent, pathPrefix, pointerBaseExpr string) {
-	for _, field := range fields {
-		if field.Required {
-			buf.WriteString(indent + "var seen_" + pathPrefix + "_" + field.FieldName + " bool\n")
-		}
-	}
-	writeStreamObject(buf, fields, targetPrefix, indent, pathPrefix, pointerBaseExpr)
-	buf.WriteString(indent + "if _, err := dec.Token(); err != nil { return nil, fmt.Errorf(\"failed to decode body: %w\", err) }\n")
-	for _, field := range fields {
-		if field.Required {
-			buf.WriteString(indent + "if !seen_" + pathPrefix + "_" + field.FieldName + " { validationErr.AddRequired(serverpkg.JoinValidationPointer(" + pointerBaseExpr + ", " + strconv.Quote(field.JSONName) + ")); return nil, &validationErr }\n")
-		}
-	}
-}
-
-func writeStreamSliceField(buf *bytes.Buffer, field BodyFieldSpec, target, indent, pathKey, pointer string) {
-	if field.ElemNested == nil {
-		buf.WriteString(indent + "if err := dec.Decode(&" + target + "); err != nil { return nil, fmt.Errorf(\"failed to decode body: %w\", err) }\n")
-		loopVar := "i_" + pathKey
-		elemExpr := target + "[" + loopVar + "]"
-		hasElemValidation := field.ElemKind != "" && len(field.Rules.ItemRules) > 0
-		if hasElemValidation {
-			buf.WriteString(indent + "for " + loopVar + " := range " + target + " {\n")
-			elemField := BodyFieldSpec{
-				JSONName: field.JSONName,
-				Kind:     field.ElemKind,
-				Rules:    validation.FieldRules{Rules: field.Rules.ItemRules},
-			}
-			if field.ElemPtr {
-				buf.WriteString(indent + "\tif " + elemExpr + " != nil {\n")
-				writeBodyValidation(buf, "*"+elemExpr, "serverpkg.JoinValidationPointer("+strconv.Quote(pointer)+", strconv.Itoa("+loopVar+"))", elemField, indent+"\t\t")
-				buf.WriteString(indent + "\t}\n")
-			} else {
-				writeBodyValidation(buf, elemExpr, "serverpkg.JoinValidationPointer("+strconv.Quote(pointer)+", strconv.Itoa("+loopVar+"))", elemField, indent+"\t")
-			}
-			buf.WriteString(indent + "}\n")
-		}
-		return
-	}
-	buf.WriteString(indent + "tok, err := dec.Token()\n")
-	buf.WriteString(indent + "if err != nil { return nil, fmt.Errorf(\"failed to decode body: %w\", err) }\n")
-	buf.WriteString(indent + "delim, ok := tok.(json.Delim)\n")
-	buf.WriteString(indent + "if !ok || delim != '[' { return nil, fmt.Errorf(\"failed to decode body: expected array\") }\n")
-	buf.WriteString(indent + target + " = make([]" + field.ElemStruct + ", 0)\n")
-	buf.WriteString(indent + "for dec.More() {\n")
-	buf.WriteString(indent + "\tvar elemtmp_" + pathKey + " " + field.ElemStruct + "\n")
-	buf.WriteString(indent + "\telemIdx := " + "strconv.Itoa(len(" + target + "))\n")
-	buf.WriteString(indent + "\telemPointer := serverpkg.JoinValidationPointer(" + strconv.Quote(pointer) + ", elemIdx)\n")
-	buf.WriteString(indent + "\ttok, err := dec.Token()\n")
-	buf.WriteString(indent + "\tif err != nil { return nil, fmt.Errorf(\"failed to decode body: %w\", err) }\n")
-	buf.WriteString(indent + "\tdelim, ok := tok.(json.Delim)\n")
-	buf.WriteString(indent + "\tif !ok || delim != '{' { return nil, fmt.Errorf(\"failed to decode body: expected object\") }\n")
-	writeStreamNestedObject(buf, field.ElemNested.Fields, "elemtmp_"+pathKey+".", indent+"\t", pathKey+"_elem", "elemPointer")
-	buf.WriteString(indent + "\t" + target + " = append(" + target + ", elemtmp_" + pathKey + ")\n")
-	buf.WriteString(indent + "}\n")
-	buf.WriteString(indent + "if _, err := dec.Token(); err != nil { return nil, fmt.Errorf(\"failed to decode body: %w\", err) }\n")
-}
-
 func writeFastGeneratedBodyParse(buf *bytes.Buffer, body *BodyBindSpec) {
 	buf.WriteString("\t\t\tvar decoded struct {\n")
 	for _, field := range body.Fields {
@@ -379,14 +261,6 @@ func writeFastGeneratedBodyParse(buf *bytes.Buffer, body *BodyBindSpec) {
 
 func writeBodyValidation(buf *bytes.Buffer, valueExpr, pointerExpr string, field BodyFieldSpec, indent string) {
 	writeRuleValidation(buf, valueExpr, pointerExpr, field.Kind, field.Rules, indent)
-}
-
-func joinQuoted(values []string) string {
-	quoted := make([]string, len(values))
-	for i, v := range values {
-		quoted[i] = strconv.Quote(v)
-	}
-	return strings.Join(quoted, ", ")
 }
 
 func canUseFastGeneratedBodyDecode(body *BodyBindSpec) bool {
@@ -963,16 +837,25 @@ func writeSliceBodyField(buf *bytes.Buffer, field BodyFieldSpec, rawFieldVar, ta
 	buf.WriteString(indent + "if err := json.Unmarshal(" + rawFieldVar + ", &" + target + "); err != nil { return nil, fmt.Errorf(\"failed to decode body: %w\", err) }\n")
 	loopVar := "i_" + pathKey
 	elemExpr := target + "[" + loopVar + "]"
-	buf.WriteString(indent + "for " + loopVar + " := range " + target + " {\n")
+	buf.WriteString(indent)
+	buf.WriteString("for ")
+	buf.WriteString(loopVar)
+	buf.WriteString(" := range ")
+	buf.WriteString(target)
+	buf.WriteString(" {\n")
 	if field.ElemPtr {
-		buf.WriteString(indent + "\tif " + elemExpr + " != nil {\n")
+		buf.WriteString(indent)
+		buf.WriteString("\tif ")
+		buf.WriteString(elemExpr)
+		buf.WriteString(" != nil {\n")
 		elemField := BodyFieldSpec{
 			JSONName: field.JSONName,
 			Kind:     field.ElemKind,
 			Rules:    validation.FieldRules{Rules: field.Rules.ItemRules},
 		}
 		writeBodyValidation(buf, "*"+elemExpr, "serverpkg.JoinValidationPointer("+pointerExpr+", strconv.Itoa("+loopVar+"))", elemField, indent+"\t\t")
-		buf.WriteString(indent + "\t}\n")
+		buf.WriteString(indent)
+		buf.WriteString("\t}\n")
 	} else {
 		elemField := BodyFieldSpec{
 			JSONName: field.JSONName,
@@ -981,16 +864,49 @@ func writeSliceBodyField(buf *bytes.Buffer, field BodyFieldSpec, rawFieldVar, ta
 		}
 		writeBodyValidation(buf, elemExpr, "serverpkg.JoinValidationPointer("+pointerExpr+", strconv.Itoa("+loopVar+"))", elemField, indent+"\t")
 	}
-	buf.WriteString(indent + "}\n")
+	buf.WriteString(indent)
+	buf.WriteString("}\n")
 }
 
 func writeNestedSliceBodyField(buf *bytes.Buffer, field BodyFieldSpec, rawFieldVar, target, indent, pathKey, pointerExpr string) {
-	buf.WriteString(indent + "var rawlist_" + pathKey + " []json.RawMessage\n")
-	buf.WriteString(indent + "if err := json.Unmarshal(" + rawFieldVar + ", &rawlist_" + pathKey + "); err != nil { return nil, fmt.Errorf(\"failed to decode body: %w\", err) }\n")
-	buf.WriteString(indent + target + " = make([]" + field.ElemStruct + ", 0, len(rawlist_" + pathKey + "))\n")
-	buf.WriteString(indent + "for i_" + pathKey + " := range rawlist_" + pathKey + " {\n")
-	buf.WriteString(indent + "\tvar elemtmp_" + pathKey + " " + field.ElemStruct + "\n")
+	buf.WriteString(indent)
+	buf.WriteString("var rawlist_")
+	buf.WriteString(pathKey)
+	buf.WriteString(" []json.RawMessage\n")
+	buf.WriteString(indent)
+	buf.WriteString("if err := json.Unmarshal(")
+	buf.WriteString(rawFieldVar)
+	buf.WriteString(", &rawlist_")
+	buf.WriteString(pathKey)
+	buf.WriteString("); err != nil { return nil, fmt.Errorf(\"failed to decode body: %w\", err) }\n")
+	buf.WriteString(indent)
+	buf.WriteString(target)
+	buf.WriteString(" = make([]")
+	buf.WriteString(field.ElemStruct)
+	buf.WriteString(", 0, len(rawlist_")
+	buf.WriteString(pathKey)
+	buf.WriteString("))\n")
+	buf.WriteString(indent)
+	buf.WriteString("for i_")
+	buf.WriteString(pathKey)
+	buf.WriteString(" := range rawlist_")
+	buf.WriteString(pathKey)
+	buf.WriteString(" {\n")
+	buf.WriteString(indent)
+	buf.WriteString("\tvar elemtmp_")
+	buf.WriteString(pathKey)
+	buf.WriteString(" ")
+	buf.WriteString(field.ElemStruct)
+	buf.WriteString("\n")
 	writeGeneratedBodyFields(buf, field.ElemNested.Fields, "raw_"+pathKey+"_elem", "rawlist_"+pathKey+"[i_"+pathKey+"]", "elemtmp_"+pathKey+".", indent+"\t", pathKey+"_elem", "serverpkg.JoinValidationPointer("+pointerExpr+", strconv.Itoa(i_"+pathKey+"))")
-	buf.WriteString(indent + "\t" + target + " = append(" + target + ", elemtmp_" + pathKey + ")\n")
-	buf.WriteString(indent + "}\n")
+	buf.WriteString(indent)
+	buf.WriteString("\t")
+	buf.WriteString(target)
+	buf.WriteString(" = append(")
+	buf.WriteString(target)
+	buf.WriteString(", elemtmp_")
+	buf.WriteString(pathKey)
+	buf.WriteString(")\n")
+	buf.WriteString(indent)
+	buf.WriteString("}\n")
 }

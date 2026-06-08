@@ -35,12 +35,15 @@ type Middleware func(next HandlerFunc) HandlerFunc
 type HandlerFunc func(http.ResponseWriter, *http.Request) error
 
 func (f HandlerFunc) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	f(w, r)
+	// When a HandlerFunc is used directly as an http.Handler there is no error
+	// sink; the error is intentionally discarded. Use it through the router to
+	// route errors via the configured ErrorHandler.
+	_ = f(w, r)
 }
 
 type HTTPError struct {
-	StatusCode int
 	Message    string
+	StatusCode int
 	Silent     bool
 }
 
@@ -85,7 +88,7 @@ func (g *Group) HandleE(method, pattern string, fn HandlerFunc, opts ...RouteOpt
 	}
 	path := joinPath(g.prefix, pattern)
 	ro := resolveRouteOptions(opts)
-	return g.router.handle(path, method, fn, g, ro.middleware)
+	return g.router.handle(path, method, fn, g, ro)
 }
 
 func (g *Group) Handle(method, pattern string, fn HandlerFunc, opts ...RouteOption) {
@@ -141,23 +144,31 @@ type OpenAPIInfo struct {
 }
 
 type RouterConfig struct {
+	ErrorHandler           ErrorHandler
 	OpenAPI                OpenAPIInfo
 	MaxRequestBodyBytes    int64
 	RequireGeneratedCodecs bool
 }
 
+// ErrorHandler converts an error returned by a HandlerFunc (or produced by the
+// router, e.g. path traversal) into an HTTP response. Implementations should
+// respect any response already written; see DefaultErrorHandler.
+type ErrorHandler func(w http.ResponseWriter, r *http.Request, err error)
+
 type Router struct {
-	Root                   *node
-	rootGroup              *Group
-	notFound               http.Handler
-	serveHTTPMiddlewares   []ServeHTTPMiddleware
 	serveHTTPHandler       http.Handler
-	openapiDoc             *openapi.OpenAPI
-	openapiJSON            []byte
-	openapiMu              sync.RWMutex
+	methodNotAllowed       http.Handler
+	notFound               http.Handler
 	schemaRegistry         *openapi.Registry
+	errorHandler           ErrorHandler
+	rootGroup              *Group
+	Root                   *node
+	openapiDoc             *openapi.OpenAPI
+	serveHTTPMiddlewares   []ServeHTTPMiddleware
+	openapiJSON            []byte
 	operations             []RegisteredOperation
 	maxRequestBodyBytes    int64
+	openapiMu              sync.RWMutex
 	requireGeneratedCodecs bool
 }
 
@@ -177,17 +188,50 @@ func NewRouterWithConfig(cfg RouterConfig) *Router {
 
 	r := &Router{
 		Root:                   &node{part: "/"},
-		notFound:               http.HandlerFunc(http.NotFound),
+		notFound:               http.HandlerFunc(defaultNotFoundHandler),
+		methodNotAllowed:       http.HandlerFunc(defaultMethodNotAllowedHandler),
+		errorHandler:           merged.ErrorHandler,
 		openapiDoc:             openapi.NewOpenAPI(merged.OpenAPI.Title, merged.OpenAPI.Version),
 		schemaRegistry:         openapi.NewRegistry("#/components/schemas"),
 		operations:             make([]RegisteredOperation, 0),
 		maxRequestBodyBytes:    merged.MaxRequestBodyBytes,
 		requireGeneratedCodecs: merged.RequireGeneratedCodecs,
 	}
+	if r.errorHandler == nil {
+		r.errorHandler = DefaultErrorHandler
+	}
 	r.openapiDoc.Info.Description = merged.OpenAPI.Description
 	r.rootGroup = &Group{router: r}
 	r.rebuildServeHTTPHandler()
 	return r
+}
+
+// SetErrorHandler overrides the handler invoked when a route returns an error.
+// Passing nil resets it to DefaultErrorHandler.
+func (r *Router) SetErrorHandler(h ErrorHandler) {
+	if h == nil {
+		h = DefaultErrorHandler
+	}
+	r.errorHandler = h
+}
+
+// SetNotFoundHandler overrides the handler used when no route matches the
+// request path. Passing nil resets it to the default problem+json responder.
+func (r *Router) SetNotFoundHandler(h http.Handler) {
+	if h == nil {
+		h = http.HandlerFunc(defaultNotFoundHandler)
+	}
+	r.notFound = h
+}
+
+// SetMethodNotAllowedHandler overrides the handler used when a route exists for
+// the path but not for the request method. Passing nil resets it to the default
+// problem+json responder.
+func (r *Router) SetMethodNotAllowedHandler(h http.Handler) {
+	if h == nil {
+		h = http.HandlerFunc(defaultMethodNotAllowedHandler)
+	}
+	r.methodNotAllowed = h
 }
 
 func mergeRouterConfig(base, override RouterConfig) RouterConfig {
@@ -205,6 +249,9 @@ func mergeRouterConfig(base, override RouterConfig) RouterConfig {
 	}
 	if override.RequireGeneratedCodecs {
 		base.RequireGeneratedCodecs = true
+	}
+	if override.ErrorHandler != nil {
+		base.ErrorHandler = override.ErrorHandler
 	}
 	return base
 }
@@ -237,7 +284,7 @@ func (r *Router) HandleE(method, pattern string, fn HandlerFunc, opts ...RouteOp
 	return r.rootGroup.HandleE(method, pattern, fn, opts...)
 }
 
-func (r *Router) handle(pattern, method string, fn HandlerFunc, g *Group, routeMW []Middleware) error {
+func (r *Router) handle(pattern, method string, fn HandlerFunc, g *Group, ro routeOptions) error {
 	if !strings.HasPrefix(pattern, "/") {
 		return fmt.Errorf("path must start with /: %s", pattern)
 	}
@@ -250,7 +297,7 @@ func (r *Router) handle(pattern, method string, fn HandlerFunc, g *Group, routeM
 
 	params := extractParams(pattern)
 	routeNode := r.Root.addRoute(pattern)
-	if err := routeNode.setHandler(method, pattern, fn, params, routeNode.wcName, g, routeMW, r.wrapHandler(fn, g, routeMW)); err != nil {
+	if err := routeNode.setHandler(method, pattern, fn, params, routeNode.wcName, g, ro.middleware, ro.maxBodyBytes, r.wrapHandler(fn, g, ro.middleware)); err != nil {
 		return err
 	}
 	return nil
@@ -348,6 +395,63 @@ func (r *Router) MountOpenAPI(path string) error {
 	return r.HandleE(http.MethodHead, path, handler)
 }
 
+var mountMethods = []string{
+	http.MethodGet,
+	http.MethodHead,
+	http.MethodPost,
+	http.MethodPut,
+	http.MethodPatch,
+	http.MethodDelete,
+	http.MethodOptions,
+}
+
+// Mount attaches an arbitrary [http.Handler] at prefix, serving it for the
+// prefix itself and every sub-path beneath it across all standard HTTP methods.
+// It is useful for embedding third-party handlers such as net/http/pprof, a
+// metrics endpoint, or another mux:
+//
+//	router.Mount("/debug/pprof", pprofMux)
+//
+// The mounted handler receives the unmodified request path (the prefix is not
+// stripped), matching the expectations of handlers like net/http/pprof. Routes
+// registered via Mount are not included in the OpenAPI document.
+func (r *Router) Mount(prefix string, handler http.Handler) error {
+	if handler == nil {
+		return errors.New("mount handler cannot be nil")
+	}
+	return r.MountFunc(prefix, handler.ServeHTTP)
+}
+
+// MountFunc is the [http.HandlerFunc] form of [Router.Mount].
+func (r *Router) MountFunc(prefix string, handler http.HandlerFunc) error {
+	if handler == nil {
+		return errors.New("mount handler cannot be nil")
+	}
+	if !strings.HasPrefix(prefix, "/") {
+		return fmt.Errorf("mount prefix must start with /: %s", prefix)
+	}
+	prefix = strings.TrimRight(prefix, "/")
+	if prefix == "" {
+		return errors.New(`mount prefix cannot be empty or "/"`)
+	}
+
+	fn := func(w http.ResponseWriter, req *http.Request) error {
+		handler.ServeHTTP(w, req)
+		return nil
+	}
+
+	// A single wildcard registration serves both the exact prefix and every
+	// sub-path: the router stores the wildcard handler on the prefix node,
+	// which also answers an exact-prefix request.
+	pattern := prefix + "/*"
+	for _, method := range mountMethods {
+		if err := r.HandleE(method, pattern, fn); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	tracked := trackedResponseWriterPool.Get().(*trackedResponseWriter)
 
@@ -372,7 +476,7 @@ func (r *Router) serveHTTP(w http.ResponseWriter, req *http.Request) {
 	path := req.URL.Path
 
 	if HasPathTraversal(path) {
-		handleHTTPError(w, NewHTTPError(http.StatusBadRequest, "Path traversal not allowed"))
+		r.errorHandler(w, req, NewHTTPError(http.StatusBadRequest, "Path traversal not allowed"))
 		return
 	}
 
@@ -384,7 +488,7 @@ func (r *Router) serveHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if !result.methodAllowed {
-		handleHTTPError(w, NewHTTPError(http.StatusMethodNotAllowed, "Method Not Allowed"))
+		r.methodNotAllowed.ServeHTTP(w, req)
 		return
 	}
 
@@ -393,8 +497,16 @@ func (r *Router) serveHTTP(w http.ResponseWriter, req *http.Request) {
 	paramValues := result.paramValues
 
 	newReq := req
-	if r.maxRequestBodyBytes > 0 && req.Body != nil && req.Body != http.NoBody {
-		req.Body = http.MaxBytesReader(w, req.Body, r.maxRequestBodyBytes)
+	// Record the matched route template on the standard net/http Pattern field
+	// (zero-allocation) so middleware and handlers can read a low-cardinality
+	// route label via RoutePattern. The router does not otherwise use it.
+	req.Pattern = handler.route
+	bodyLimit := r.maxRequestBodyBytes
+	if handler.maxBodyBytes != nil {
+		bodyLimit = *handler.maxBodyBytes
+	}
+	if bodyLimit > 0 && req.Body != nil && req.Body != http.NoBody {
+		req.Body = http.MaxBytesReader(w, req.Body, bodyLimit)
 	}
 
 	if len(paramValues) > 0 {
@@ -416,7 +528,7 @@ func (r *Router) serveHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if err := fn(w, newReq); err != nil {
-		handleHTTPError(w, err)
+		r.errorHandler(w, newReq, err)
 	}
 
 	if len(paramValues) > 0 {
@@ -426,6 +538,22 @@ func (r *Router) serveHTTP(w http.ResponseWriter, req *http.Request) {
 
 type writtenChecker interface {
 	Written() bool
+}
+
+// DefaultErrorHandler is the [ErrorHandler] used when a router is not given a
+// custom one. It maps [HTTPError] and validation errors to RFC 9457
+// problem+json responses, treats unknown errors as 500, and never overwrites a
+// response that a handler already started writing.
+func DefaultErrorHandler(w http.ResponseWriter, _ *http.Request, err error) {
+	handleHTTPError(w, err)
+}
+
+func defaultNotFoundHandler(w http.ResponseWriter, _ *http.Request) {
+	writeErrorJSON(w, http.StatusNotFound, http.StatusText(http.StatusNotFound))
+}
+
+func defaultMethodNotAllowedHandler(w http.ResponseWriter, _ *http.Request) {
+	writeErrorJSON(w, http.StatusMethodNotAllowed, http.StatusText(http.StatusMethodNotAllowed))
 }
 
 func handleHTTPError(w http.ResponseWriter, err error) {
@@ -439,7 +567,8 @@ func handleHTTPError(w http.ResponseWriter, err error) {
 	}
 	if httpErr, ok := err.(HTTPError); ok {
 		if httpErr.Silent {
-			slog.Debug("server: silent HTTP error suppressed",
+			slog.Debug(
+				"server: silent HTTP error suppressed",
 				"status", httpErr.StatusCode,
 				"message", httpErr.Message,
 			)
@@ -477,11 +606,21 @@ func Wildcard(req *http.Request) string {
 	return Param(req, "*")
 }
 
+// RoutePattern returns the route template that matched the request (for
+// example "/users/:id"), or "" if no tyche route matched. It is suitable as a
+// low-cardinality label for logs and metrics, unlike the concrete request path.
+func RoutePattern(req *http.Request) string {
+	if req == nil {
+		return ""
+	}
+	return req.Pattern
+}
+
 type problemDetails struct {
 	Type   string `json:"type"`
-	Status int    `json:"status"`
 	Title  string `json:"title"`
 	Detail string `json:"detail,omitempty"`
+	Status int    `json:"status"`
 }
 
 func writeProblemJSON(w http.ResponseWriter, statusCode int, body any) {

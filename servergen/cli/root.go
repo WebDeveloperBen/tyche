@@ -173,7 +173,7 @@ func withGeneratedWorktree(rootDir string, patterns []string, fn func(tmpDir str
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	if err := copyProjectTree(rootDir, tmpDir, ignoreMatcher); err != nil {
 		return err
@@ -273,7 +273,7 @@ func copyFile(srcPath, dstPath string, mode fs.FileMode) error {
 	if err != nil {
 		return err
 	}
-	defer src.Close()
+	defer func() { _ = src.Close() }()
 
 	if err := os.MkdirAll(filepath.Dir(dstPath), 0o755); err != nil {
 		return err
@@ -283,10 +283,13 @@ func copyFile(srcPath, dstPath string, mode fs.FileMode) error {
 	if err != nil {
 		return err
 	}
-	defer dst.Close()
+	defer func() { _ = dst.Close() }()
 
-	_, err = io.Copy(dst, src)
-	return err
+	if _, err = io.Copy(dst, src); err != nil {
+		return err
+	}
+	// Surface any error from flushing/closing the written file.
+	return dst.Close()
 }
 
 func runCommand(dir, name string, args ...string) error {

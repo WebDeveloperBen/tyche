@@ -28,7 +28,19 @@ type Operation struct {
 	DefaultStatus       int
 	Deprecated          bool
 	SkipValidateRequest bool
+	// Security lists the security requirements for this operation. Each entry
+	// is a set of scheme names (referencing schemes registered via
+	// [Router.AddSecurityScheme]) that must all be satisfied; multiple entries
+	// are alternatives (logical OR). The value for each scheme is the list of
+	// required OAuth2 scopes, or an empty slice for non-OAuth2 schemes. Use
+	// [SecurityRequirement] to build entries.
+	Security []SecurityRequirement
 }
+
+// SecurityRequirement maps security scheme names to the scopes they require for
+// an operation. An empty (or nil) SecurityRequirement documents that the
+// operation may be called without authentication.
+type SecurityRequirement = map[string][]string
 
 type TypedHandler[I, O any] func(context.Context, *I) (*O, error)
 
@@ -157,6 +169,7 @@ func registerOpenAPIOperation(grp *Group, op Operation, inputType, outputType re
 		RequestBody: extractRequestBody(inputType, registry),
 		Responses:   extractResponses(outputSpec, registry),
 		Deprecated:  op.Deprecated,
+		Security:    op.Security,
 	}
 
 	doc.AddOperation(op.Method, openAPIPath, docOp)

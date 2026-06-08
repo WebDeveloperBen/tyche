@@ -260,7 +260,7 @@ func analyseOutputType(t types.Type) OutputWriteSpec {
 		case tag.Get("body") != "" || field.Name() == "Body":
 			spec.BodyFieldName = field.Name()
 			spec.BodyTypeExpr = types.TypeString(field.Type(), nil)
-			bodySpec := analyseOutputBody(field.Type(), "out."+field.Name(), spec.StaticStatus)
+			bodySpec := analyseOutputBody(field.Type(), "out."+field.Name())
 			if bodySpec != nil {
 				bodySpec.HasSimpleStatus = spec.StaticStatus > 0 && spec.StatusField == ""
 			}
@@ -285,7 +285,7 @@ func analyseOutputType(t types.Type) OutputWriteSpec {
 	}
 
 	if spec.BodyFieldName == "" {
-		bodySpec := analyseOutputBody(original, "out", spec.StaticStatus)
+		bodySpec := analyseOutputBody(original, "out")
 		if bodySpec != nil {
 			bodySpec.HasSimpleStatus = spec.StaticStatus > 0 && spec.StatusField == ""
 		}
@@ -295,7 +295,7 @@ func analyseOutputType(t types.Type) OutputWriteSpec {
 	return spec
 }
 
-func analyseOutputBody(t types.Type, targetExpr string, staticStatus int) *OutputBodySpec {
+func analyseOutputBody(t types.Type, targetExpr string) *OutputBodySpec {
 	underlying := t
 	if named, ok := t.(*types.Named); ok {
 		underlying = named.Underlying()

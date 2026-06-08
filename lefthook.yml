@@ -1,0 +1,42 @@
+# Git hooks managed by lefthook (https://lefthook.dev).
+#
+# Install / refresh after editing this file:  lefthook install
+# Run manually:                               lefthook run pre-commit
+# Skip once (don't make a habit of it):       git commit --no-verify
+#
+# Shape for this single Go module:
+#   - gofumpt auto-formats staged Go files first; stage_fixed re-adds anything
+#     it rewrote so the formatted version is what gets committed.
+#   - build / lint / test then run on the WHOLE module: Go tooling is
+#     package-scoped and a change in one file can break another package, so
+#     forwarding {staged_files} would be incorrect here (unlike file-scoped
+#     formatters/linters in other ecosystems).
+#   - The verify group only fires when Go sources or go.mod/go.sum are staged,
+#     and runs build/lint/test in parallel once formatting has completed.
+
+pre-commit:
+  # Top-level jobs run sequentially, so formatting finishes (and re-stages)
+  # before the verify group reads the files.
+  jobs:
+    - name: gofumpt
+      glob: "*.go"
+      exclude:
+        - '.*_gen\.go$'
+        - '^servergen/testdata/'
+      run: gofumpt -w {staged_files}
+      stage_fixed: true
+
+    - name: verify
+      glob:
+        - "*.go"
+        - "go.mod"
+        - "go.sum"
+      group:
+        parallel: true
+        jobs:
+          - name: build
+            run: go build ./...
+          - name: lint
+            run: golangci-lint run ./...
+          - name: test
+            run: go test ./...

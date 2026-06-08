@@ -128,9 +128,46 @@ type Operation struct {
 }
 
 type Components struct {
-	Schemas    map[string]*Schema    `json:"schemas,omitempty"`
-	Parameters map[string]*Parameter `json:"parameters,omitempty"`
-	Responses  map[string]*Response  `json:"responses,omitempty"`
+	Schemas         map[string]*Schema         `json:"schemas,omitempty"`
+	Parameters      map[string]*Parameter      `json:"parameters,omitempty"`
+	Responses       map[string]*Response       `json:"responses,omitempty"`
+	SecuritySchemes map[string]*SecurityScheme `json:"securitySchemes,omitempty"`
+}
+
+// SecurityScheme describes a single OpenAPI security scheme (an authentication
+// method). See https://spec.openapis.org/oas/v3.1.0#security-scheme-object.
+type SecurityScheme struct {
+	// Type is one of "apiKey", "http", "mutualTLS", "oauth2", or
+	// "openIdConnect".
+	Type        string `json:"type"`
+	Description string `json:"description,omitempty"`
+	// Name and In apply to type "apiKey" (In is "query", "header", or
+	// "cookie").
+	Name string `json:"name,omitempty"`
+	In   string `json:"in,omitempty"`
+	// Scheme and BearerFormat apply to type "http" (e.g. "bearer", "basic").
+	Scheme       string `json:"scheme,omitempty"`
+	BearerFormat string `json:"bearerFormat,omitempty"`
+	// Flows applies to type "oauth2".
+	Flows *OAuthFlows `json:"flows,omitempty"`
+	// OpenIDConnectURL applies to type "openIdConnect".
+	OpenIDConnectURL string `json:"openIdConnectUrl,omitempty"`
+}
+
+// OAuthFlows describes the OAuth2 flows for an oauth2 [SecurityScheme].
+type OAuthFlows struct {
+	Implicit          *OAuthFlow `json:"implicit,omitempty"`
+	Password          *OAuthFlow `json:"password,omitempty"`
+	ClientCredentials *OAuthFlow `json:"clientCredentials,omitempty"`
+	AuthorizationCode *OAuthFlow `json:"authorizationCode,omitempty"`
+}
+
+// OAuthFlow describes a single OAuth2 flow.
+type OAuthFlow struct {
+	AuthorizationURL string            `json:"authorizationUrl,omitempty"`
+	TokenURL         string            `json:"tokenUrl,omitempty"`
+	RefreshURL       string            `json:"refreshUrl,omitempty"`
+	Scopes           map[string]string `json:"scopes,omitempty"`
 }
 
 func NewOpenAPI(title, version string) *OpenAPI {
@@ -176,4 +213,17 @@ func (o *OpenAPI) AddOperation(method, path string, op *Operation) {
 
 func (o *OpenAPI) AddSchema(name string, schema *Schema) {
 	o.Components.Schemas[name] = schema
+}
+
+// AddSecurityScheme registers a named security scheme under
+// components.securitySchemes. The name is what operations reference in their
+// security requirements.
+func (o *OpenAPI) AddSecurityScheme(name string, scheme *SecurityScheme) {
+	if o.Components == nil {
+		o.Components = &Components{}
+	}
+	if o.Components.SecuritySchemes == nil {
+		o.Components.SecuritySchemes = make(map[string]*SecurityScheme)
+	}
+	o.Components.SecuritySchemes[name] = scheme
 }

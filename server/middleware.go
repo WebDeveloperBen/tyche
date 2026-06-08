@@ -87,6 +87,9 @@ func (g *Group) UseNamed(mws ...NamedMiddleware) *Group {
 // values when registering a single route.
 type routeOptions struct {
 	middleware []Middleware
+	// maxBodyBytes overrides the router-wide request body limit for this route
+	// when non-nil. A value of 0 means the route accepts an unlimited body.
+	maxBodyBytes *int64
 }
 
 // RouteOption customizes the registration of an individual route. Options are
@@ -104,6 +107,23 @@ type RouteOption func(*routeOptions)
 func WithMiddleware(mw ...Middleware) RouteOption {
 	return func(o *routeOptions) {
 		o.middleware = append(o.middleware, mw...)
+	}
+}
+
+// WithMaxBodyBytes overrides the router-wide request body size limit
+// ([RouterConfig.MaxRequestBodyBytes]) for a single route. A positive value
+// caps the body at that many bytes; a value of 0 removes the limit for the
+// route entirely. This is useful when most endpoints want a small default but a
+// specific endpoint (a file upload, a large model prompt) needs a different
+// ceiling:
+//
+//	server.Register(api, uploadOp, uploadHandler,
+//		server.WithMaxBodyBytes(100<<20), // 100 MiB
+//	)
+func WithMaxBodyBytes(n int64) RouteOption {
+	return func(o *routeOptions) {
+		v := n
+		o.maxBodyBytes = &v
 	}
 }
 

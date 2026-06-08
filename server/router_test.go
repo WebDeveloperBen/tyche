@@ -14,7 +14,7 @@ func TestRouter_BasicRouting(t *testing.T) {
 	var called bool
 	router.GET("/test", func(w http.ResponseWriter, r *http.Request) error {
 		called = true
-		w.Write([]byte("OK"))
+		_, _ = w.Write([]byte("OK"))
 		return nil
 	})
 
@@ -126,7 +126,7 @@ func TestRouter_RootPath(t *testing.T) {
 	var called bool
 	router.GET("/", func(w http.ResponseWriter, r *http.Request) error {
 		called = true
-		w.Write([]byte("root"))
+		_, _ = w.Write([]byte("root"))
 		return nil
 	})
 

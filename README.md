@@ -8,7 +8,11 @@ Typed Go HTTP routing with OpenAPI generation, pluggable docs UIs, and optional 
 - Typed route registration with OpenAPI output.
 - Generated codecs via `servergen` to avoid reflection on supported routes.
 - Built-in docs mounting for Scalar and Redoc.
-- Middleware support for both route-level and `http.Handler` middleware.
+- Middleware at root, group, and route scope, plus `http.Handler` middleware.
+- Typed Server-Sent Events streaming (`RegisterStream`) with OpenAPI output.
+- Pluggable error handling, custom 404/405, per-route body limits, and `Mount` for sub-handlers.
+- OpenAPI security schemes and per-operation security requirements.
+- Dependency-free request instrumentation hooks and a `servertest` helper package.
 
 ## Recommended public API
 
@@ -92,6 +96,110 @@ func handler(ctx context.Context, in *Input) (*Output, error) {
 	claims, ok := authKey.From(ctx)
 	// ...
 }
+```
+
+## Error handling
+
+By default the router renders `HTTPError` and validation errors as RFC 9457
+`application/problem+json`, and unmatched routes / methods return problem+json
+404 / 405. Override any of these:
+
+```go
+router := server.NewRouterWithConfig(server.RouterConfig{
+	ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
+		// e.g. map upstream provider errors, attach request IDs, log 5xx.
+		server.DefaultErrorHandler(w, r, err)
+	},
+})
+
+router.SetNotFoundHandler(myNotFound)          // http.Handler
+router.SetMethodNotAllowedHandler(my405)       // http.Handler
+```
+
+## Streaming (Server-Sent Events)
+
+`RegisterStream` registers a typed SSE endpoint: input is bound and validated
+like any typed route, the response is documented in OpenAPI as
+`text/event-stream`, and the handler streams type-safe events. Root/group/route
+middleware all apply.
+
+```go
+type StreamInput struct {
+	Topic string `query:"topic" required:"true"`
+}
+type Token struct {
+	Text string `json:"text"`
+}
+
+server.RegisterStream(api, server.Operation{
+	OperationID: "stream-tokens",
+	Method:      http.MethodGet,
+	Path:        "/chat/stream",
+}, func(ctx context.Context, in *StreamInput, stream *server.Stream[Token]) error {
+	for tok := range tokens(ctx, in.Topic) {
+		if err := stream.Send(Token{Text: tok}); err != nil {
+			return err // client disconnected
+		}
+	}
+	return nil
+})
+```
+
+For non-typed handlers, `server.NewEventStream(w, r)` returns a raw `EventStream`
+with `Send`, `SendData`, `Comment`, and `Flush`.
+
+## OpenAPI security
+
+Register schemes once and reference them per operation:
+
+```go
+router.AddSecurityScheme("bearerAuth", server.BearerScheme("JWT"))
+router.AddSecurityScheme("apiKey", server.APIKeyScheme("X-API-Key", "header"))
+
+server.Register(api, server.Operation{
+	OperationID: "create-thing",
+	Method:      http.MethodPost,
+	Path:        "/things",
+	Security:    []server.SecurityRequirement{{"bearerAuth": {}}},
+}, handler)
+```
+
+## Per-route body limits and mounting
+
+```go
+// Override the router-wide MaxRequestBodyBytes for one route (0 = unlimited).
+server.Register(api, uploadOp, uploadHandler, server.WithMaxBodyBytes(100<<20))
+
+// Mount any http.Handler (pprof, a metrics endpoint, another mux) at a prefix.
+router.Mount("/debug/pprof", pprofMux)
+```
+
+## Instrumentation
+
+`plugins.Instrument` is a dependency-free seam for tracing/metrics. It reports
+method, route template, status, response bytes, duration, and error per request,
+and is safe to use with streaming and hijacking handlers.
+
+```go
+router.Use(plugins.Instrument(plugins.ObserverFunc(func(i plugins.RequestInfo) {
+	histogram.WithLabelValues(i.Method, i.Route, strconv.Itoa(i.Status)).Observe(i.Duration.Seconds())
+})))
+```
+
+`server.RoutePattern(r)` exposes the matched route template (e.g. `/users/:id`)
+to your own middleware and handlers — use it as a low-cardinality metric label.
+
+## Testing
+
+The `servertest` package builds requests and unwraps the standard `DataResponse`
+envelope:
+
+```go
+client := servertest.New(t, router)
+resp := client.POST("/users", User{Name: "Ada"}).AssertStatus(http.StatusCreated)
+got := servertest.DecodeData[User](t, resp)
+
+problem := servertest.DecodeProblem(t, client.GET("/secret").AssertStatus(401))
 ```
 
 ## CLI

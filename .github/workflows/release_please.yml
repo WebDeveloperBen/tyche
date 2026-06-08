@@ -1,0 +1,31 @@
+name: release-please
+
+# Automates semantic-versioned releases from Conventional Commits on main.
+# release-please opens/maintains a "release PR" that bumps the version and
+# updates CHANGELOG.md; merging that PR creates a GitHub release and a vX.Y.Z
+# git tag, which is what `go get github.com/webdeveloperben/tyche@vX.Y.Z`
+# resolves against.
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  pull-requests: write
+
+# Avoid overlapping runs racing to update the release PR.
+concurrency:
+  group: release-please-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json

@@ -105,7 +105,7 @@ func TestLogger(t *testing.T) {
 			body := make([]byte, 1024)
 			n, _ := r.Body.Read(body)
 			w.WriteHeader(http.StatusOK)
-			w.Write(body[:n])
+			_, _ = w.Write(body[:n])
 			loggedBody = string(body[:n])
 			return nil
 		})

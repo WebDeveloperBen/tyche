@@ -206,20 +206,19 @@ func TestRateLimitConcurrency(t *testing.T) {
 		const requestsPerWorker = 20
 
 		for range numWorkers {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				for range requestsPerWorker {
 					req := httptest.NewRequest(http.MethodGet, "/test", nil)
 					w := httptest.NewRecorder()
 					r.ServeHTTP(w, req)
-					if w.Code == http.StatusOK {
+					switch w.Code {
+					case http.StatusOK:
 						atomic.AddInt64(&accepted, 1)
-					} else if w.Code == http.StatusTooManyRequests {
+					case http.StatusTooManyRequests:
 						atomic.AddInt64(&rejected, 1)
 					}
 				}
-			}()
+			})
 		}
 		wg.Wait()
 
@@ -247,15 +246,13 @@ func TestRateLimitConcurrency(t *testing.T) {
 
 		var wg sync.WaitGroup
 		for range 50 {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				for range 100 {
 					req := httptest.NewRequest(http.MethodGet, "/test", nil)
 					w := httptest.NewRecorder()
 					r.ServeHTTP(w, req)
 				}
-			}()
+			})
 		}
 		wg.Wait()
 	})
