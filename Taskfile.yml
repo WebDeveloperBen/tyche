@@ -41,12 +41,12 @@ tasks:
   modernize:
     desc: Apply Go modernization fixes (min/max, slices, range-over-int, etc.) across the module
     cmds:
-      - go run golang.org/x/tools/go/analysis/passes/modernize/cmd/modernize@latest -fix ./...
+      - go run golang.org/x/tools/go/analysis/passes/modernize/cmd/modernize -fix ./...
 
   modernize:check:
     desc: Report Go modernization opportunities without applying them (useful in CI)
     cmds:
-      - go run golang.org/x/tools/go/analysis/passes/modernize/cmd/modernize@latest ./...
+      - go run golang.org/x/tools/go/analysis/passes/modernize/cmd/modernize ./...
 
   benchmark:regen-fixtures:
     desc: Regenerate benchmark fixture codecs

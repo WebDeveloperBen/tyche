@@ -23,7 +23,7 @@ pre-commit:
     # but it mutates source, so it runs in the format phase with stage_fixed.
     - name: modernize
       glob: "*.go"
-      run: go run golang.org/x/tools/go/analysis/passes/modernize/cmd/modernize@latest -fix ./...
+      run: go run golang.org/x/tools/go/analysis/passes/modernize/cmd/modernize -fix ./...
       stage_fixed: true
 
     - name: gofumpt

@@ -139,6 +139,35 @@ func TestRegisterStream_ValidationErrorBeforeStream(t *testing.T) {
 	}
 }
 
+func TestRegisterStream_RouteMiddlewareRuns(t *testing.T) {
+	router := server.NewRouter()
+	api := router.Group("/v1")
+
+	var ran bool
+	mw := func(next server.HandlerFunc) server.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) error {
+			ran = true
+			return next(w, r)
+		}
+	}
+
+	// Proves RouteOption (WithMiddleware) threads through the typed
+	// registration path (RegisterStreamE -> HandleE -> opts).
+	server.RegisterStream(api, server.Operation{
+		OperationID: "stream-guarded",
+		Method:      http.MethodGet,
+		Path:        "/guarded",
+	}, func(ctx context.Context, in *streamInput, stream *server.Stream[tokenEvent]) error {
+		return nil
+	}, server.WithMiddleware(mw))
+
+	router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/v1/guarded?topic=x", nil))
+
+	if !ran {
+		t.Error("route-level middleware did not run on a typed stream route")
+	}
+}
+
 func TestRegisterStream_DocumentedInOpenAPI(t *testing.T) {
 	router := server.NewRouter()
 	api := router.Group("/v1")

@@ -176,12 +176,19 @@ router.Mount("/debug/pprof", pprofMux)
 
 ## Instrumentation
 
-`plugins.Instrument` is a dependency-free seam for tracing/metrics. It reports
-method, route template, status, response bytes, duration, and error per request,
-and is safe to use with streaming and hijacking handlers.
+A dependency-free seam for tracing/metrics, reporting method, route template,
+status, response bytes, and duration per request. Two variants:
+
+- **`plugins.InstrumentHTTP`** (recommended for metrics) — `UseHTTP` middleware
+  that wraps the whole router, so `Status`/`Bytes` reflect the **final** response,
+  including error and 404/405 responses.
+- **`plugins.Instrument`** — `HandlerFunc` middleware that additionally exposes
+  the handler's returned Go `error` (`RequestInfo.Err`), but its `Status` only
+  reflects what the handler itself wrote (errors are rendered by the router
+  afterwards, so they show as 200 here — classify them via `Err`).
 
 ```go
-router.Use(plugins.Instrument(plugins.ObserverFunc(func(i plugins.RequestInfo) {
+router.UseHTTP(plugins.InstrumentHTTP(plugins.ObserverFunc(func(i plugins.RequestInfo) {
 	histogram.WithLabelValues(i.Method, i.Route, strconv.Itoa(i.Status)).Observe(i.Duration.Seconds())
 })))
 ```
@@ -217,9 +224,79 @@ servergen generate ./...
 servergen build -o ./bin/api ./cmd/api
 servergen run ./cmd/api
 servergen test ./...
+servergen client --spec openapi.json --out ./client --module github.com/you/app/client
 ```
 
 Optional staging excludes can go in `.servergenignore`.
+
+## Generated Go client
+
+`servergen client` generates a **self-contained, dependency-free** typed Go
+client from the OpenAPI spec your server emits. It's for Go code that *consumes*
+your API — other services, a CLI, or a customer SDK — giving typed calls instead
+of hand-rolled HTTP. (Non-Go consumers should generate from the OpenAPI spec
+with their own language's tooling.)
+
+```sh
+# in your API repo: emit the spec, then generate + commit the client
+servergen client --spec openapi.json --out ./client \
+  --module github.com/you/app/client
+```
+
+The output module imports only the standard library and bakes in tyche's
+conventions — the `{"data": …}` success envelope and `application/problem+json`
+errors (as a typed `*APIError`):
+
+```go
+import "github.com/you/app/client"
+
+c := client.New("https://api.you.com", client.WithBearerToken(tok))
+
+out, err := c.GetUser(ctx, &client.GetUserInput{ID: "u1"})
+var apiErr *client.APIError
+if errors.As(err, &apiErr) && apiErr.StatusCode == 404 { /* ... */ }
+```
+
+Every method takes trailing `...client.CallOption` for per-call extras — add a
+request header, or read response headers/status:
+
+```go
+var resp *http.Response
+out, err := c.GetUser(ctx, in,
+	client.WithRequestHeader("Idempotency-Key", key),
+	client.WithResponseCallback(func(r *http.Response) { resp = r }), // read r.Header
+)
+```
+
+Because the client is its own module with its own version tags, consumers
+`go get …/client@vX.Y.Z` and the contract is checked at compile time. Types are
+recovered from the spec by structural deduplication, so a shape returned by
+several endpoints collapses to one Go type.
+
+Server-Sent Events operations (registered server-side with `RegisterStream`)
+generate a streaming method returning a typed `*Stream[Event]`, iterated with the
+scanner pattern:
+
+```go
+s, err := c.StreamMessages(ctx, &client.StreamMessagesInput{Topic: "general"})
+if err != nil { /* ... */ }
+defer s.Close()
+for s.Next() {
+	ev := s.Event() // typed event value
+	// ...
+}
+if err := s.Err(); err != nil { /* ... */ }
+```
+
+`clientgen.Generate` is the programmatic entry point if you'd rather generate
+in-process from a `*clientgen.Document`.
+
+**Current limitations:** structural dedup means two distinct shapes with
+identical structure share one Go type (named from the first occurrence);
+integer enums generate a bare integer type (no named constants); schema
+composition (`allOf`/`oneOf`/`anyOf`) is emitted as `json.RawMessage` (with a
+generation notice); and successful responses are decoded as JSON regardless of
+`Content-Type`.
 
 ## Benchmarks
 

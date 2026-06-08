@@ -28,6 +28,7 @@ func NewRootCommand() *cobra.Command {
 	root.AddCommand(newBuildCommand())
 	root.AddCommand(newRunCommand())
 	root.AddCommand(newTestCommand())
+	root.AddCommand(newClientCommand())
 	return root
 }
 

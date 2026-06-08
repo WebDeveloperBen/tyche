@@ -558,9 +558,15 @@ func defaultMethodNotAllowedHandler(w http.ResponseWriter, _ *http.Request) {
 }
 
 func handleHTTPError(w http.ResponseWriter, err error) {
+	written := false
+	if wc, ok := w.(writtenChecker); ok {
+		written = wc.Written()
+	}
+
 	var validationErr *validation.Error
 	if errors.As(err, &validationErr) {
-		if wc, ok := w.(writtenChecker); ok && wc.Written() {
+		if written {
+			logSuppressedError(err)
 			return
 		}
 		writeValidationProblemJSON(w, http.StatusBadRequest, validationErr)
@@ -575,7 +581,8 @@ func handleHTTPError(w http.ResponseWriter, err error) {
 			)
 			return
 		}
-		if wc, ok := w.(writtenChecker); ok && wc.Written() {
+		if written {
+			logSuppressedError(err)
 			return
 		}
 		message := httpErr.Message
@@ -590,10 +597,19 @@ func handleHTTPError(w http.ResponseWriter, err error) {
 		handleHTTPError(w, httpErr)
 		return
 	}
-	if wc, ok := w.(writtenChecker); ok && wc.Written() {
+	if written {
+		logSuppressedError(err)
 		return
 	}
 	writeErrorJSON(w, http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError))
+}
+
+// logSuppressedError records an error that cannot be rendered because the
+// response has already started (e.g. a streaming handler that fails after its
+// first event). The status cannot change at that point, so the error is logged
+// rather than silently dropped.
+func logSuppressedError(err error) {
+	slog.Warn("server: handler error after response started; suppressed", "error", err)
 }
 
 func Param(req *http.Request, name string) string {

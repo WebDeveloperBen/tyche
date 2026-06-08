@@ -46,13 +46,21 @@ type ObserverFunc func(RequestInfo)
 // ObserveRequest calls f(info).
 func (f ObserverFunc) ObserveRequest(info RequestInfo) { f(info) }
 
-// Instrument returns middleware that records timing, status, and response size
-// for each request and reports them to obs. It is dependency-free; wire obs to
-// your telemetry backend of choice.
+// Instrument returns HandlerFunc middleware that records timing and the
+// handler's returned error for each request and reports them to obs. It is
+// dependency-free; wire obs to your telemetry backend of choice.
 //
 //	router.Use(plugins.Instrument(plugins.ObserverFunc(func(i plugins.RequestInfo) {
 //		metrics.RequestDuration.WithLabelValues(i.Method, i.Route, strconv.Itoa(i.Status)).Observe(i.Duration.Seconds())
 //	})))
+//
+// IMPORTANT: because this runs inside the router's error-handling boundary, the
+// observed Status/Bytes reflect only what the handler itself wrote. When a
+// handler returns an error, the router renders the response afterwards, so
+// Status will be the handler's default (200) rather than the final status —
+// use RequestInfo.Err to classify those. For accurate final status and bytes
+// (including error and 404/405 responses), use [InstrumentHTTP] instead, which
+// wraps the entire router.
 //
 // The wrapper preserves http.Flusher, http.Hijacker, io.ReaderFrom, and
 // http.Pusher, so it composes safely with streaming (Server-Sent Events) and
@@ -67,13 +75,9 @@ func Instrument(obs RequestObserver) server.Middleware {
 			mw := &meteredWriter{ResponseWriter: w, status: http.StatusOK}
 			err := next(mw, r)
 
-			route := server.RoutePattern(r)
-			if route == "" {
-				route = r.URL.Path
-			}
 			obs.ObserveRequest(RequestInfo{
 				Method:   r.Method,
-				Route:    route,
+				Route:    routeLabel(r),
 				Path:     r.URL.Path,
 				Status:   mw.status,
 				Bytes:    mw.bytes,
@@ -85,6 +89,46 @@ func Instrument(obs RequestObserver) server.Middleware {
 	}
 }
 
+// InstrumentHTTP returns http.Handler middleware (for [server.Router.UseHTTP])
+// that records timing, the final response status, and bytes written for every
+// request — including responses produced by the router's error handler and the
+// not-found / method-not-allowed handlers. It wraps the whole router, so unlike
+// [Instrument] the Status is always the true status sent to the client.
+//
+// It cannot observe the handler's returned Go error (the router has already
+// converted it to a response by this layer), so RequestInfo.Err is always nil;
+// classify failures by Status. This is the recommended seam for metrics.
+//
+//	router.UseHTTP(plugins.InstrumentHTTP(obs))
+func InstrumentHTTP(obs RequestObserver) server.ServeHTTPMiddleware {
+	if obs == nil {
+		return func(next http.Handler) http.Handler { return next }
+	}
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			start := time.Now()
+			mw := &meteredWriter{ResponseWriter: w, status: http.StatusOK}
+			next.ServeHTTP(mw, r)
+
+			obs.ObserveRequest(RequestInfo{
+				Method:   r.Method,
+				Route:    routeLabel(r),
+				Path:     r.URL.Path,
+				Status:   mw.status,
+				Bytes:    mw.bytes,
+				Duration: time.Since(start),
+			})
+		})
+	}
+}
+
+func routeLabel(r *http.Request) string {
+	if route := server.RoutePattern(r); route != "" {
+		return route
+	}
+	return r.URL.Path
+}
+
 // InstrumentPlugin is the [server] plugin form of [Instrument], usable with a
 // plugin registry.
 type InstrumentPlugin struct {
@@ -94,6 +138,17 @@ type InstrumentPlugin struct {
 // Register installs the instrumentation middleware on the router.
 func (p InstrumentPlugin) Register(r *server.Router) error {
 	r.Use(Instrument(p.Observer))
+	return nil
+}
+
+// InstrumentHTTPPlugin is the [server] plugin form of [InstrumentHTTP].
+type InstrumentHTTPPlugin struct {
+	Observer RequestObserver
+}
+
+// Register installs the http.Handler-level instrumentation on the router.
+func (p InstrumentHTTPPlugin) Register(r *server.Router) error {
+	r.UseHTTP(InstrumentHTTP(p.Observer))
 	return nil
 }
 
@@ -122,6 +177,11 @@ func (m *meteredWriter) Write(b []byte) (int, error) {
 	m.bytes += int64(n)
 	return n, err
 }
+
+// Written reports whether a response has begun, satisfying the router's
+// writtenChecker so error rendering does not double-write when this wraps the
+// whole router via InstrumentHTTP.
+func (m *meteredWriter) Written() bool { return m.wroteHeader }
 
 func (m *meteredWriter) Flush() {
 	if f, ok := m.ResponseWriter.(http.Flusher); ok {
