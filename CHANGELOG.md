@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.1.0](https://github.com/WebDeveloperBen/tyche/compare/v1.0.0...v1.1.0) (2026-06-08)
+
+
+### Features
+
+* create clientgen for other golang consumers ([79f0670](https://github.com/WebDeveloperBen/tyche/commit/79f0670f393f6ae31eb85eb4d3641fc7234dc8d5))
+
+
+### Bug Fixes
+
+* correctness issues and race conditions across server and clientgen ([afb430e](https://github.com/WebDeveloperBen/tyche/commit/afb430e57bf3b7f9f30b8a22ca1dca043d42bbd6))
+* integration tests to be self dependant ([1f37f55](https://github.com/WebDeveloperBen/tyche/commit/1f37f552a6e2a83a0ea5efc4786e1493badbbde4))
+
 ## 1.0.0 (2026-06-08)
 
 
