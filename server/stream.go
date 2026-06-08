@@ -262,13 +262,12 @@ func RegisterStream[I, O any](grp *Group, op Operation, handler StreamHandler[I,
 }
 
 // RegisterStreamE registers a typed Server-Sent Events endpoint. Unlike
-// [RegisterE], streaming endpoints always bind their input via reflection
-// ([ParseRequest]) — there is no generated codec for a streamed response — and
-// therefore always validate the input at runtime regardless of
-// [RouterConfig.RequireGeneratedCodecs]. Operation.SkipValidateRequest only
-// suppresses the registration-time validation-rule check, not runtime input
-// validation. The response is documented in OpenAPI as a text/event-stream
-// whose data frames match the type O.
+// [RegisterE] (which requires a generated codec), streaming endpoints bind their
+// input via reflection ([ParseRequest]) — there is no generated codec for a
+// streamed response — and therefore always validate the input at runtime.
+// Operation.SkipValidateRequest only suppresses the registration-time
+// validation-rule check, not runtime input validation. The response is
+// documented in OpenAPI as a text/event-stream whose data frames match type O.
 //
 // Root-, group-, and route-level middleware (via opts) all apply.
 func RegisterStreamE[I, O any](grp *Group, op Operation, handler StreamHandler[I, O], opts ...RouteOption) error {
@@ -368,7 +367,7 @@ func registerStreamOpenAPIOperation(grp *Group, op Operation, inputType, outputT
 		RequestBody: extractRequestBody(inputType, registry),
 		Responses:   responses,
 		Deprecated:  op.Deprecated,
-		Security:    op.Security,
+		Security:    normalizeSecurityRequirements(op.Security),
 	}
 
 	doc.AddOperation(op.Method, openAPIPath, docOp)

@@ -70,6 +70,34 @@ func TestRegisterStream_OperationSecurity(t *testing.T) {
 	}
 }
 
+func TestSecurityRequirement_NilScopesSerializeAsArray(t *testing.T) {
+	router := server.NewRouter()
+	router.AddSecurityScheme("bearerAuth", server.BearerScheme("JWT"))
+	api := router.Group("/v1")
+
+	// nil scope slice must serialize as [] (valid OpenAPI), not null.
+	server.RegisterStream(api, server.Operation{
+		OperationID: "nil-scope-stream",
+		Method:      http.MethodGet,
+		Path:        "/s",
+		Security:    []server.SecurityRequirement{{"bearerAuth": nil}},
+	}, func(ctx context.Context, in *streamInput, stream *server.Stream[tokenEvent]) error {
+		return nil
+	})
+
+	body, err := json.Marshal(router.OpenAPI())
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	out := string(body)
+	if strings.Contains(out, `"bearerAuth":null`) {
+		t.Errorf("nil scopes serialized as null (invalid OpenAPI):\n%s", out)
+	}
+	if !strings.Contains(out, `"bearerAuth":[]`) {
+		t.Errorf("expected bearerAuth scopes as [], got:\n%s", out)
+	}
+}
+
 // ensure the security alias is usable directly too.
 func TestSecuritySchemeAlias(t *testing.T) {
 	s := server.SecurityScheme{Type: "http", Scheme: "bearer"}

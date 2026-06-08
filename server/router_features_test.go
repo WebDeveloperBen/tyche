@@ -6,10 +6,53 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/webdeveloperben/tyche/server"
 )
+
+// TestUse_ConcurrentWithServing exercises the data race that previously existed
+// when Use()/rebuildHandlers mutated a route's wrapped handler while in-flight
+// requests were reading it. Run with -race; it must stay clean.
+func TestUse_ConcurrentWithServing(t *testing.T) {
+	router := server.NewRouter()
+	g := router.Group("")
+	g.GET("/x", func(w http.ResponseWriter, r *http.Request) error {
+		w.WriteHeader(http.StatusOK)
+		return nil
+	})
+
+	var wg sync.WaitGroup
+	stop := make(chan struct{})
+
+	// Concurrent request servers (readers of wrappedFn).
+	for range 6 {
+		wg.Go(func() {
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				rec := httptest.NewRecorder()
+				router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/x", nil))
+				if rec.Code != http.StatusOK {
+					t.Errorf("unexpected status %d", rec.Code)
+					return
+				}
+			}
+		})
+	}
+
+	// A single configuration goroutine adding middleware (writer of wrappedFn),
+	// matching the realistic "reconfigure while serving" scenario.
+	for range 100 {
+		g.Use(func(next server.HandlerFunc) server.HandlerFunc { return next })
+	}
+	close(stop)
+	wg.Wait()
+}
 
 func TestErrorHandler_Custom(t *testing.T) {
 	router := server.NewRouter()

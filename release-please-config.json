@@ -5,9 +5,7 @@
       "release-type": "go",
       "package-name": "tyche",
       "include-component-in-tag": false,
-      "changelog-path": "CHANGELOG.md",
-      "bump-minor-pre-major": true,
-      "bump-patch-for-minor-pre-major": false
+      "changelog-path": "CHANGELOG.md"
     }
   }
 }

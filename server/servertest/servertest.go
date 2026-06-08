@@ -16,6 +16,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 // Client issues requests against an http.Handler (typically a *server.Router)
@@ -131,10 +132,15 @@ func (r *Response) AssertStatus(want int) *Response {
 func (r *Response) bodyExcerpt() string {
 	const limit = 512
 	body := r.Body.String()
-	if len(body) > limit {
-		return body[:limit] + "…"
+	if len(body) <= limit {
+		return body
 	}
-	return body
+	// Trim back to a rune boundary so the excerpt stays valid UTF-8.
+	truncated := body[:limit]
+	for len(truncated) > 0 && !utf8.ValidString(truncated) {
+		truncated = truncated[:len(truncated)-1]
+	}
+	return truncated + "…"
 }
 
 // dataEnvelope mirrors server.DataResponse for generic decoding. It is kept

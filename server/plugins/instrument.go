@@ -162,6 +162,14 @@ type meteredWriter struct {
 }
 
 func (m *meteredWriter) WriteHeader(status int) {
+	// 1xx are informational and may precede the final header (e.g. 100 Continue,
+	// 103 Early Hints). Don't latch them as the response status or mark the
+	// response as written — otherwise metrics would report the 1xx and, under
+	// InstrumentHTTP, the router would suppress a later error response.
+	if status >= 100 && status < 200 {
+		m.ResponseWriter.WriteHeader(status)
+		return
+	}
 	if !m.wroteHeader {
 		m.status = status
 		m.wroteHeader = true

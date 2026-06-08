@@ -169,7 +169,7 @@ func registerOpenAPIOperation(grp *Group, op Operation, inputType, outputType re
 		RequestBody: extractRequestBody(inputType, registry),
 		Responses:   extractResponses(outputSpec, registry),
 		Deprecated:  op.Deprecated,
-		Security:    op.Security,
+		Security:    normalizeSecurityRequirements(op.Security),
 	}
 
 	doc.AddOperation(op.Method, openAPIPath, docOp)

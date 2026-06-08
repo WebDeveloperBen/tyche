@@ -17,8 +17,6 @@ type typeSet struct {
 	enums          []*enumType
 	taken          map[string]bool
 	componentNames map[string]string // structural key -> preferred name from components.schemas
-	usesTime       bool
-	usesRawJSON    bool
 	notices        []string
 }
 
@@ -76,14 +74,12 @@ func newTypeSet(doc *Document) *typeSet {
 func (ts *typeSet) goType(s *Schema, ctx string) string {
 	s = ts.doc.resolve(s)
 	if s == nil {
-		ts.usesRawJSON = true
 		return "json.RawMessage"
 	}
 
 	// Composition is not modeled in V1; treat as opaque.
 	if len(s.AllOf) > 0 || len(s.OneOf) > 0 || len(s.AnyOf) > 0 {
 		ts.note("schema composition (allOf/oneOf/anyOf) at %s emitted as json.RawMessage", ctx)
-		ts.usesRawJSON = true
 		return "json.RawMessage"
 	}
 
@@ -97,7 +93,7 @@ func (ts *typeSet) goType(s *Schema, ctx string) string {
 	case s.Type == "string" && len(s.Enum) > 0:
 		return ts.namedEnum(s, ctx)
 	case s.Type == "string":
-		return stringType(s.Format, ts)
+		return stringType(s.Format)
 	case s.Type == "integer":
 		return integerType(s.Format)
 	case s.Type == "number":
@@ -105,7 +101,6 @@ func (ts *typeSet) goType(s *Schema, ctx string) string {
 	case s.Type == "boolean":
 		return "bool"
 	default:
-		ts.usesRawJSON = true
 		return "json.RawMessage"
 	}
 }
@@ -115,7 +110,6 @@ func (ts *typeSet) mapType(s *Schema, ctx string) string {
 		return "map[string]" + ts.goType(s.AdditionalProperties.Schema, ctx+"Value")
 	}
 	// Free-form object (additionalProperties: true / absent).
-	ts.usesRawJSON = true
 	return "json.RawMessage"
 }
 
@@ -249,10 +243,9 @@ func (ts *typeSet) canonical(s *Schema, seen map[*Schema]bool) string {
 	}
 }
 
-func stringType(format string, ts *typeSet) string {
+func stringType(format string) string {
 	switch format {
 	case "date-time", "date":
-		ts.usesTime = true
 		return "time.Time"
 	case "binary", "byte":
 		return "[]byte"
@@ -298,7 +291,7 @@ func (ts *typeSet) scalarParamType(s *Schema) string {
 	case "boolean":
 		return "bool"
 	case "string":
-		return stringType(s.Format, ts)
+		return stringType(s.Format)
 	default:
 		return "string"
 	}

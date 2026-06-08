@@ -77,6 +77,11 @@ func (g *Group) Group(prefix string, mw ...Middleware) *Group {
 	return newGroup
 }
 
+// Use appends middleware to the group and rebuilds the affected handlers.
+//
+// Like all route and middleware registration, Use must be called during setup,
+// before the router begins serving requests: it rebuilds handler chains in
+// place and is not safe to call concurrently with active request handling.
 func (g *Group) Use(mw ...Middleware) *Group {
 	g.stack = append(g.stack, mw...)
 	g.router.rebuildHandlers()
@@ -145,10 +150,9 @@ type OpenAPIInfo struct {
 }
 
 type RouterConfig struct {
-	ErrorHandler           ErrorHandler
-	OpenAPI                OpenAPIInfo
-	MaxRequestBodyBytes    int64
-	RequireGeneratedCodecs bool
+	ErrorHandler        ErrorHandler
+	OpenAPI             OpenAPIInfo
+	MaxRequestBodyBytes int64
 }
 
 // ErrorHandler converts an error returned by a HandlerFunc (or produced by the
@@ -157,20 +161,19 @@ type RouterConfig struct {
 type ErrorHandler func(w http.ResponseWriter, r *http.Request, err error)
 
 type Router struct {
-	serveHTTPHandler       http.Handler
-	methodNotAllowed       http.Handler
-	notFound               http.Handler
-	schemaRegistry         *openapi.Registry
-	errorHandler           ErrorHandler
-	rootGroup              *Group
-	Root                   *node
-	openapiDoc             *openapi.OpenAPI
-	serveHTTPMiddlewares   []ServeHTTPMiddleware
-	openapiJSON            []byte
-	operations             []RegisteredOperation
-	maxRequestBodyBytes    int64
-	openapiMu              sync.RWMutex
-	requireGeneratedCodecs bool
+	serveHTTPHandler     http.Handler
+	methodNotAllowed     http.Handler
+	notFound             http.Handler
+	schemaRegistry       *openapi.Registry
+	errorHandler         ErrorHandler
+	rootGroup            *Group
+	Root                 *node
+	openapiDoc           *openapi.OpenAPI
+	serveHTTPMiddlewares []ServeHTTPMiddleware
+	openapiJSON          []byte
+	operations           []RegisteredOperation
+	maxRequestBodyBytes  int64
+	openapiMu            sync.RWMutex
 }
 
 func NewRouter() *Router {
@@ -188,15 +191,14 @@ func NewRouterWithConfig(cfg RouterConfig) *Router {
 	merged = mergeRouterConfig(merged, cfg)
 
 	r := &Router{
-		Root:                   &node{part: "/"},
-		notFound:               http.HandlerFunc(defaultNotFoundHandler),
-		methodNotAllowed:       http.HandlerFunc(defaultMethodNotAllowedHandler),
-		errorHandler:           merged.ErrorHandler,
-		openapiDoc:             openapi.NewOpenAPI(merged.OpenAPI.Title, merged.OpenAPI.Version),
-		schemaRegistry:         openapi.NewRegistry("#/components/schemas"),
-		operations:             make([]RegisteredOperation, 0),
-		maxRequestBodyBytes:    merged.MaxRequestBodyBytes,
-		requireGeneratedCodecs: merged.RequireGeneratedCodecs,
+		Root:                &node{part: "/"},
+		notFound:            http.HandlerFunc(defaultNotFoundHandler),
+		methodNotAllowed:    http.HandlerFunc(defaultMethodNotAllowedHandler),
+		errorHandler:        merged.ErrorHandler,
+		openapiDoc:          openapi.NewOpenAPI(merged.OpenAPI.Title, merged.OpenAPI.Version),
+		schemaRegistry:      openapi.NewRegistry("#/components/schemas"),
+		operations:          make([]RegisteredOperation, 0),
+		maxRequestBodyBytes: merged.MaxRequestBodyBytes,
 	}
 	if r.errorHandler == nil {
 		r.errorHandler = DefaultErrorHandler
@@ -248,9 +250,6 @@ func mergeRouterConfig(base, override RouterConfig) RouterConfig {
 	if override.MaxRequestBodyBytes > 0 {
 		base.MaxRequestBodyBytes = override.MaxRequestBodyBytes
 	}
-	if override.RequireGeneratedCodecs {
-		base.RequireGeneratedCodecs = true
-	}
 	if override.ErrorHandler != nil {
 		base.ErrorHandler = override.ErrorHandler
 	}
@@ -267,6 +266,9 @@ func (r *Router) Group(prefix string, mw ...Middleware) *Group {
 	return g
 }
 
+// Use appends root-level middleware applied to every route. It must be called
+// during setup, before the router serves requests (it rebuilds handler chains
+// in place and is not safe to call concurrently with active request handling).
 func (r *Router) Use(middleware ...Middleware) {
 	r.rootGroup.stack = append(r.rootGroup.stack, middleware...)
 	r.rebuildHandlers()
@@ -407,15 +409,21 @@ var mountMethods = []string{
 }
 
 // Mount attaches an arbitrary [http.Handler] at prefix, serving it for the
-// prefix itself and every sub-path beneath it across all standard HTTP methods.
-// It is useful for embedding third-party handlers such as net/http/pprof, a
-// metrics endpoint, or another mux:
+// prefix itself and every sub-path beneath it. It is useful for embedding
+// third-party handlers such as net/http/pprof, a metrics endpoint, or another
+// mux:
 //
 //	router.Mount("/debug/pprof", pprofMux)
 //
-// The mounted handler receives the unmodified request path (the prefix is not
-// stripped), matching the expectations of handlers like net/http/pprof. Routes
-// registered via Mount are not included in the OpenAPI document.
+// The handler is registered for GET, HEAD, POST, PUT, PATCH, DELETE, and
+// OPTIONS (not CONNECT or TRACE). It receives the unmodified request path (the
+// prefix is not stripped), matching the expectations of handlers like
+// net/http/pprof. Routes registered via Mount are not included in the OpenAPI
+// document.
+//
+// A concrete route that overlaps the mount prefix takes precedence for the
+// exact paths and methods it registers; mount the handler on a dedicated prefix
+// to avoid surprising shadowing.
 func (r *Router) Mount(prefix string, handler http.Handler) error {
 	if handler == nil {
 		return errors.New("mount handler cannot be nil")
@@ -524,8 +532,8 @@ func (r *Router) serveHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 
 	fn := handler.fn
-	if handler.wrappedFn != nil {
-		fn = handler.wrappedFn
+	if wf := handler.wrappedFn.Load(); wf != nil {
+		fn = *wf
 	}
 
 	if err := fn(w, newReq); err != nil {
@@ -812,8 +820,4 @@ func (g *Group) middlewareChain() []Middleware {
 	chain = append(chain, parentChain...)
 	chain = append(chain, g.stack...)
 	return chain
-}
-
-func (r *Router) RequireGeneratedCodecs(required bool) {
-	r.requireGeneratedCodecs = required
 }

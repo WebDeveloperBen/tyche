@@ -252,9 +252,7 @@ func (e *APIError) Error() string {
 
 func (c *CLIENTTYPE) applyHeaders(req *http.Request, header http.Header) {
 	for k, vs := range c.header {
-		for _, v := range vs {
-			req.Header.Set(k, v)
-		}
+		req.Header[http.CanonicalHeaderKey(k)] = append([]string(nil), vs...)
 	}
 	for k, vs := range header {
 		req.Header[http.CanonicalHeaderKey(k)] = append([]string(nil), vs...)

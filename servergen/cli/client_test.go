@@ -51,6 +51,41 @@ func TestClientCommand_GeneratesFiles(t *testing.T) {
 	}
 }
 
+func TestClientCommand_RemovesStaleFiles(t *testing.T) {
+	dir := t.TempDir()
+	outDir := filepath.Join(dir, "client")
+
+	streamSpec := `{"openapi":"3.1.0","info":{"title":"T","version":"1.0.0"},"paths":{"/s":{"get":{"operationId":"s","responses":{"200":{"description":"x","content":{"text/event-stream":{"schema":{"type":"object","properties":{"m":{"type":"string"}}}}}}}}}},"components":{"schemas":{}}}`
+	plainSpec := clientCmdSpec // a non-streaming spec
+
+	run := func(spec string) {
+		t.Helper()
+		specPath := filepath.Join(dir, "openapi.json")
+		if err := os.WriteFile(specPath, []byte(spec), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		cmd := NewRootCommand()
+		var out bytes.Buffer
+		cmd.SetOut(&out)
+		cmd.SetErr(&out)
+		cmd.SetArgs([]string{"client", "--spec", specPath, "--out", outDir, "--module", "example.com/x/client"})
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("client command failed: %v\n%s", err, out.String())
+		}
+	}
+
+	run(streamSpec)
+	if _, err := os.Stat(filepath.Join(outDir, "stream.go")); err != nil {
+		t.Fatalf("expected stream.go after streaming spec: %v", err)
+	}
+
+	// Regenerating a non-streaming spec must remove the now-stale stream.go.
+	run(plainSpec)
+	if _, err := os.Stat(filepath.Join(outDir, "stream.go")); !os.IsNotExist(err) {
+		t.Errorf("stale stream.go was not removed on regeneration (err=%v)", err)
+	}
+}
+
 func TestClientCommand_RequiresFlags(t *testing.T) {
 	cmd := NewRootCommand()
 	var out bytes.Buffer

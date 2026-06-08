@@ -21,6 +21,7 @@ const sampleSpec = `{
         "parameters": [
           {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}},
           {"name": "expand", "in": "query", "required": false, "schema": {"type": "string"}},
+          {"name": "since", "in": "query", "required": false, "schema": {"type": "string", "format": "date-time"}},
           {"name": "X-Trace", "in": "header", "required": false, "schema": {"type": "string"}}
         ],
         "responses": {
@@ -60,6 +61,13 @@ const sampleSpec = `{
         "operationId": "stream-events",
         "parameters": [{"name": "topic", "in": "query", "required": true, "schema": {"type": "string"}}],
         "responses": {"200": {"description": "stream", "content": {"text/event-stream": {"schema": {"type": "object", "properties": {"message": {"type": "string"}, "seq": {"type": "integer", "format": "int64"}}, "required": ["message"]}}}}}
+      }
+    },
+    "/blobs": {
+      "post": {
+        "operationId": "put-blob",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "additionalProperties": true}}}},
+        "responses": {"204": {"description": "ok"}}
       }
     }
   },
@@ -117,6 +125,19 @@ func TestGenerate_ExpectedFilesAndSymbols(t *testing.T) {
 		`header.Set("X-Trace", fmtParam(*in.XTrace))`,
 	} {
 		if !strings.Contains(ops, want) {
+			t.Errorf("operations.go missing %q", want)
+		}
+	}
+
+	// date-time param + free-form body must yield used time / encoding/json
+	// imports in operations.go (regression guard for per-file import derivation).
+	nops := normalizeWS(ops)
+	for _, want := range []string{
+		"Since *time.Time",
+		"Body *json.RawMessage",
+		"func (c *Client) PutBlob(ctx context.Context, in *PutBlobInput, opts ...CallOption) error",
+	} {
+		if !strings.Contains(nops, want) {
 			t.Errorf("operations.go missing %q", want)
 		}
 	}

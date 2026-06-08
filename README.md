@@ -24,8 +24,7 @@ router := server.NewRouterWithConfig(server.RouterConfig{
 		Title:   "Example API",
 		Version: "1.0.0",
 	},
-	MaxRequestBodyBytes:    10 << 20,
-	RequireGeneratedCodecs: true,
+	MaxRequestBodyBytes: 10 << 20,
 })
 
 api := router.Group("/api")

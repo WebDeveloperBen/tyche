@@ -9,7 +9,9 @@ import "github.com/webdeveloperben/tyche/server/openapi"
 type SecurityScheme = openapi.SecurityScheme
 
 // AddSecurityScheme registers a named security scheme in the OpenAPI document's
-// components. Operations reference it by name through [Operation.Security]:
+// components. Like other OpenAPI registration it should be called during setup,
+// before the document is served concurrently. Operations reference it by name
+// through [Operation.Security]:
 //
 //	router.AddSecurityScheme("bearer", server.BearerScheme("JWT"))
 //
@@ -46,4 +48,25 @@ func BasicScheme() *SecurityScheme {
 		Type:   "http",
 		Scheme: "basic",
 	}
+}
+
+// normalizeSecurityRequirements converts nil scope slices to empty slices so the
+// emitted OpenAPI document uses an empty array (valid) rather than null for
+// schemes that take no scopes.
+func normalizeSecurityRequirements(reqs []SecurityRequirement) []map[string][]string {
+	if reqs == nil {
+		return nil
+	}
+	out := make([]map[string][]string, len(reqs))
+	for i, r := range reqs {
+		m := make(map[string][]string, len(r))
+		for k, v := range r {
+			if v == nil {
+				v = []string{}
+			}
+			m[k] = v
+		}
+		out[i] = m
+	}
+	return out
 }

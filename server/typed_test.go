@@ -583,7 +583,9 @@ func TestRegister_DuplicateOperationIDPanics(t *testing.T) {
 }
 
 func TestRegister_RequireGeneratedCodecPanicsWhenMissing(t *testing.T) {
-	router := server.NewRouterWithConfig(server.RouterConfig{RequireGeneratedCodecs: true})
+	// Register always requires a generated codec and fails explicitly when one
+	// is missing (no reflection fallback).
+	router := server.NewRouter()
 	api := router.Group("/api")
 
 	defer func() {

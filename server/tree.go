@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 )
 
 var paramValuePool = sync.Pool{
@@ -46,7 +47,10 @@ type routeHandler struct {
 	group        *Group
 	routeMW      []Middleware
 	maxBodyBytes *int64
-	wrappedFn    HandlerFunc
+	// wrappedFn is the middleware-wrapped handler. It is stored atomically
+	// because Router.Use / Group.Use rebuild it in place via rebuildHandlers,
+	// which may run concurrently with in-flight requests reading it in serveHTTP.
+	wrappedFn atomic.Pointer[HandlerFunc]
 }
 
 const (
@@ -308,7 +312,11 @@ func (n *node) setHandler(method, route string, fn HandlerFunc, params []string,
 		if n.handlers[idx] != nil {
 			return fmt.Errorf("duplicate route handler registered for %s %s", method, route)
 		}
-		n.handlers[idx] = &routeHandler{fn: fn, route: route, params: params, wildcard: wildcard, group: group, routeMW: routeMW, maxBodyBytes: maxBodyBytes, wrappedFn: wrappedFn}
+		rh := &routeHandler{fn: fn, route: route, params: params, wildcard: wildcard, group: group, routeMW: routeMW, maxBodyBytes: maxBodyBytes}
+		if wrappedFn != nil {
+			rh.wrappedFn.Store(&wrappedFn)
+		}
+		n.handlers[idx] = rh
 	}
 	return nil
 }
@@ -318,7 +326,8 @@ func (n *node) rebuildHandlers(wrap func(*routeHandler) HandlerFunc) {
 		if handler == nil || handler.fn == nil || handler.group == nil {
 			continue
 		}
-		handler.wrappedFn = wrap(handler)
+		wrapped := wrap(handler)
+		handler.wrappedFn.Store(&wrapped)
 	}
 	if n.colon != nil {
 		n.colon.rebuildHandlers(wrap)
