@@ -11,37 +11,76 @@ import (
 
 	"github.com/webdeveloperben/tyche/clientgen"
 	"github.com/webdeveloperben/tyche/server"
-	samplepkg "github.com/webdeveloperben/tyche/servergen/testdata/samplepkg"
 )
 
-type streamInput struct {
+type intgThing struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type intgCreateInput struct {
+	Tenant string `path:"tenant"`
+	Body   struct {
+		Name string `json:"name" validate:"required"`
+	} `body:"true"`
+}
+
+type intgCreateOutput struct {
+	Body intgThing `body:"true"`
+}
+
+type intgStreamInput struct {
 	Topic string `query:"topic" required:"true"`
 }
 
-type streamEvent struct {
+type intgStreamEvent struct {
 	Message string `json:"message"`
 }
 
-// TestGenerate_FromRealServerSpec builds a real tyche router, marshals the
+// Register a reflection-based codec inline so this test does not depend on
+// servergen's generated codec file (which is gitignored and absent on a fresh
+// CI clone). The codec is never invoked — it only needs to exist so
+// server.Register succeeds and produces a real OpenAPI document.
+func init() {
+	server.RegisterGeneratedCodec(server.GeneratedRouteMeta{
+		OperationID:       "intg-create",
+		Method:            http.MethodPost,
+		Path:              "/tenants/:tenant/things",
+		HasGeneratedCodec: true,
+	}, server.GeneratedRouteCodec{
+		Parse: func(req *http.Request) (any, error) { return server.ParseRequest[intgCreateInput](req) },
+		Write: func(w http.ResponseWriter, req *http.Request, out any) error {
+			return server.WriteTypedResponse(w, out.(*intgCreateOutput))
+		},
+	})
+}
+
+// TestGenerate_FromRealServerSpec builds a real tyche router (a typed
+// data-envelope operation plus a Server-Sent Events operation), marshals the
 // OpenAPI document it produces, generates a client from that exact spec, and
 // compiles it — validating clientgen against actual server output (data
-// envelope, inlined schemas, component naming, body/array shapes).
+// envelope, inlined schemas, component naming, text/event-stream).
 func TestGenerate_FromRealServerSpec(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping compile-based integration test in -short mode")
 	}
 
 	router := server.NewRouter()
-	grp := router.Group("/api")
-	samplepkg.RegisterTypedRoutes(grp)
+	api := router.Group("/v1")
 
-	// A real Server-Sent Events operation, so the generated client exercises
-	// the streaming path against genuine text/event-stream OpenAPI output.
-	server.RegisterStream(grp, server.Operation{
-		OperationID: "stream-messages",
+	server.Register(api, server.Operation{
+		OperationID: "intg-create",
+		Method:      http.MethodPost,
+		Path:        "/tenants/:tenant/things",
+	}, func(ctx context.Context, in *intgCreateInput) (*intgCreateOutput, error) {
+		return &intgCreateOutput{}, nil
+	})
+
+	server.RegisterStream(api, server.Operation{
+		OperationID: "intg-stream",
 		Method:      http.MethodGet,
 		Path:        "/messages/stream",
-	}, func(ctx context.Context, in *streamInput, s *server.Stream[streamEvent]) error {
+	}, func(ctx context.Context, in *intgStreamInput, s *server.Stream[intgStreamEvent]) error {
 		return nil
 	})
 
@@ -73,7 +112,7 @@ func TestGenerate_FromRealServerSpec(t *testing.T) {
 		t.Fatalf("generated client from real spec failed to compile: %v\n%s\n--- operations.go ---\n%s", err, out, mustFile(res, "operations.go"))
 	}
 
-	if len(res.Files) < 3 {
-		t.Errorf("expected at least go.mod, client.go, types.go; got %d files", len(res.Files))
+	if len(res.Files) < 4 {
+		t.Errorf("expected go.mod, client.go, operations.go, types.go, stream.go; got %d files", len(res.Files))
 	}
 }
