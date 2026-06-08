@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.1](https://github.com/WebDeveloperBen/tyche/compare/v1.1.0...v1.1.1) (2026-06-08)
+
+
+### Bug Fixes
+
+* **ci:** use latest versions of the actions ([df5ba14](https://github.com/WebDeveloperBen/tyche/commit/df5ba14d3017177b1ce208e5921d05b2c363f4e9))
+
 ## [1.1.0](https://github.com/WebDeveloperBen/tyche/compare/v1.0.0...v1.1.0) (2026-06-08)
 
 
