@@ -1,0 +1,14 @@
+# Pinned developer toolchain (https://mise.jdx.dev).
+#
+# New machine / fresh clone:
+#   mise install        # installs the exact tool versions below
+#   task setup          # wires the git hooks (lefthook install)
+#
+# CI installs these same versions via jdx/mise-action, so local and CI agree.
+
+[tools]
+go = "1.26.3"
+golangci-lint = "2.12.2"
+lefthook = "1.13.6"
+gofumpt = "0.10.0"
+task = "3.51.1"

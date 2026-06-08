@@ -7,6 +7,11 @@ tasks:
     cmds:
       - task dev
 
+  setup:
+    desc: Wire git hooks for a fresh clone (run after `mise install`)
+    cmds:
+      - lefthook install
+
   build:
     desc: Build the API binary using generated codecs from a temporary worktree
     cmds:
