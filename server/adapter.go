@@ -1,6 +1,10 @@
 package server
 
 import (
+	"bufio"
+	"errors"
+	"io"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -135,6 +139,16 @@ type fallbackInterceptor struct {
 	status     int
 }
 
+// The interceptor must expose the same optional writer interfaces the tracked
+// writer does, so wrapping it doesn't strip Hijack/Push/Flush/sendfile from
+// matched handlers.
+var (
+	_ http.Flusher  = (*fallbackInterceptor)(nil)
+	_ http.Hijacker = (*fallbackInterceptor)(nil)
+	_ http.Pusher   = (*fallbackInterceptor)(nil)
+	_ io.ReaderFrom = (*fallbackInterceptor)(nil)
+)
+
 func (f *fallbackInterceptor) WriteHeader(code int) {
 	// Only ServeMux's own 404/405 (no matched handler) is captured for
 	// re-rendering; everything else — matched handlers and unmatched redirects
@@ -168,6 +182,40 @@ func (f *fallbackInterceptor) Written() bool {
 		return wc.Written()
 	}
 	return f.status != 0
+}
+
+// Hijack, Push, and ReadFrom forward to the underlying writer so hijack-based
+// handlers (WebSockets), HTTP/2 server push, and sendfile keep working when a
+// route matches through the interceptor. Only ServeMux's built-in 404/405 is
+// suppressed; a matched handler's connection takeover / body write passes
+// through unchanged.
+func (f *fallbackInterceptor) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if hj, ok := f.ResponseWriter.(http.Hijacker); ok {
+		return hj.Hijack()
+	}
+	return nil, nil, errors.New("response writer does not support hijacking")
+}
+
+func (f *fallbackInterceptor) Push(target string, opts *http.PushOptions) error {
+	if p, ok := f.ResponseWriter.(http.Pusher); ok {
+		return p.Push(target, opts)
+	}
+	return http.ErrNotSupported
+}
+
+func (f *fallbackInterceptor) ReadFrom(r io.Reader) (int64, error) {
+	if !f.matched {
+		// Suppressed 404/405 path — swallow, mirroring Write. (ServeMux's
+		// built-in fallbacks use Write, so this is defensive.)
+		if f.status == 0 {
+			f.status = http.StatusOK
+		}
+		return io.Copy(io.Discard, r)
+	}
+	if rf, ok := f.ResponseWriter.(io.ReaderFrom); ok {
+		return rf.ReadFrom(r)
+	}
+	return io.Copy(f.ResponseWriter, r)
 }
 
 // toStdlibPattern converts "/things/:id/*rest" to "/things/{id}/{rest...}". An

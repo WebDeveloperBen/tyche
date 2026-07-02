@@ -1,8 +1,10 @@
 package server_test
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,6 +13,44 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/webdeveloperben/tyche/server"
 )
+
+// hijackableRecorder is an httptest recorder that also satisfies http.Hijacker,
+// so a test can verify Hijack is forwarded through the adapter's wrappers.
+type hijackableRecorder struct {
+	*httptest.ResponseRecorder
+	hijacked bool
+}
+
+func (h *hijackableRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	h.hijacked = true
+	return nil, nil, nil
+}
+
+// TestServeMuxAdapterForwardsHijack verifies a matched handler can reach
+// http.Hijacker (for WebSockets) through the ServeMux adapter's fallback
+// interceptor and the tracked writer, down to the underlying writer.
+func TestServeMuxAdapterForwardsHijack(t *testing.T) {
+	api := server.NewAPI(server.NewServeMuxAdapter())
+	var couldHijack bool
+	api.GET("/ws", func(w http.ResponseWriter, _ *http.Request) error {
+		hj, ok := w.(http.Hijacker)
+		couldHijack = ok
+		if ok {
+			_, _, _ = hj.Hijack()
+		}
+		return nil
+	})
+
+	rec := &hijackableRecorder{ResponseRecorder: httptest.NewRecorder()}
+	api.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/ws", nil))
+
+	if !couldHijack {
+		t.Fatal("handler could not access http.Hijacker through the ServeMux interceptor")
+	}
+	if !rec.hijacked {
+		t.Fatal("Hijack did not reach the underlying writer")
+	}
+}
 
 // chiTestAdapter is a reference server.Adapter over github.com/go-chi/chi. It
 // lives in the test suite rather than in a shipped package: the Adapter
