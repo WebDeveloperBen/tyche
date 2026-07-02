@@ -11,7 +11,7 @@ import (
 
 func TestRealIP(t *testing.T) {
 	t.Run("uses direct client IP when no proxy", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		r.Use(plugins.RealIP())
 
 		var realIP string
@@ -30,7 +30,7 @@ func TestRealIP(t *testing.T) {
 	})
 
 	t.Run("extracts IP from X-Forwarded-For", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		r.Use(plugins.RealIP(plugins.RealIPConfig{
 			TrustedProxies: []string{"127.0.0.1", "10.0.0.0/8"},
 		}))
@@ -52,7 +52,7 @@ func TestRealIP(t *testing.T) {
 	})
 
 	t.Run("strips trusted proxies from X-Forwarded-For", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		r.Use(plugins.RealIP(plugins.RealIPConfig{
 			TrustedProxies: []string{"10.0.0.0/8", "192.168.0.0/16"},
 		}))
@@ -74,7 +74,7 @@ func TestRealIP(t *testing.T) {
 	})
 
 	t.Run("handles single IP in X-Forwarded-For", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		r.Use(plugins.RealIP(plugins.RealIPConfig{
 			TrustedProxies: []string{"127.0.0.1"},
 		}))
@@ -96,7 +96,7 @@ func TestRealIP(t *testing.T) {
 	})
 
 	t.Run("empty X-Forwarded-For does not set X-Real-IP", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		r.Use(plugins.RealIP())
 
 		var realIP string
@@ -115,7 +115,7 @@ func TestRealIP(t *testing.T) {
 	})
 
 	t.Run("uses default trusted proxies", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		r.Use(plugins.RealIP())
 
 		var realIP string
@@ -135,7 +135,7 @@ func TestRealIP(t *testing.T) {
 	})
 
 	t.Run("handles whitespace in X-Forwarded-For", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		r.Use(plugins.RealIP(plugins.RealIPConfig{
 			TrustedProxies: []string{"10.0.0.0/8"},
 		}))

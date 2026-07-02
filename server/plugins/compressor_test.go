@@ -18,7 +18,7 @@ import (
 
 func TestCompressor(t *testing.T) {
 	t.Run("no compression when no Accept-Encoding", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		r.Use(plugins.Compressor())
 
 		r.GET("/test", func(w http.ResponseWriter, r *http.Request) error {
@@ -37,7 +37,7 @@ func TestCompressor(t *testing.T) {
 	})
 
 	t.Run("gzip compression", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		r.Use(plugins.Compressor())
 
 		r.GET("/test", func(w http.ResponseWriter, r *http.Request) error {
@@ -76,7 +76,7 @@ func TestCompressor(t *testing.T) {
 	})
 
 	t.Run("brotli compression", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		r.Use(plugins.Compressor())
 
 		r.GET("/test", func(w http.ResponseWriter, r *http.Request) error {
@@ -106,7 +106,7 @@ func TestCompressor(t *testing.T) {
 	})
 
 	t.Run("brotli preferred over gzip", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		r.Use(plugins.Compressor())
 
 		r.GET("/test", func(w http.ResponseWriter, r *http.Request) error {
@@ -126,7 +126,7 @@ func TestCompressor(t *testing.T) {
 	})
 
 	t.Run("quality values are respected", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		r.Use(plugins.Compressor())
 
 		r.GET("/test", func(w http.ResponseWriter, r *http.Request) error {
@@ -146,7 +146,7 @@ func TestCompressor(t *testing.T) {
 	})
 
 	t.Run("wildcard can beat explicit lower quality encoding", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		r.Use(plugins.Compressor())
 
 		r.GET("/test", func(w http.ResponseWriter, r *http.Request) error {
@@ -166,7 +166,7 @@ func TestCompressor(t *testing.T) {
 	})
 
 	t.Run("no compression for non-compressible content type", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		r.Use(plugins.Compressor())
 
 		r.GET("/test", func(w http.ResponseWriter, r *http.Request) error {
@@ -190,7 +190,7 @@ func TestCompressor(t *testing.T) {
 	})
 
 	t.Run("wildcard content type matching", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		r.Use(plugins.Compressor(plugins.CompressorConfig{
 			ContentTypes: []string{"text/*", "application/json"},
 		}))
@@ -212,7 +212,7 @@ func TestCompressor(t *testing.T) {
 	})
 
 	t.Run("handles already set Content-Encoding", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		r.Use(plugins.Compressor())
 
 		r.GET("/test", func(w http.ResponseWriter, r *http.Request) error {
@@ -233,7 +233,7 @@ func TestCompressor(t *testing.T) {
 	})
 
 	t.Run("Flush works with compression", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		r.Use(plugins.Compressor())
 
 		r.GET("/test", func(w http.ResponseWriter, r *http.Request) error {
@@ -252,7 +252,7 @@ func TestCompressor(t *testing.T) {
 	})
 
 	t.Run("empty response is not compressed", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		r.Use(plugins.Compressor())
 
 		r.GET("/test", func(w http.ResponseWriter, r *http.Request) error {
@@ -271,7 +271,7 @@ func TestCompressor(t *testing.T) {
 	})
 
 	t.Run("gzip compression respects MaxCompressedSize", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		r.Use(plugins.Compressor(plugins.CompressorConfig{
 			MaxCompressedSize: 40,
 		}))
@@ -297,7 +297,7 @@ func TestCompressor(t *testing.T) {
 	})
 
 	t.Run("brotli compression respects MaxCompressedSize", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		r.Use(plugins.Compressor(plugins.CompressorConfig{
 			MaxCompressedSize: 20,
 		}))
@@ -323,7 +323,7 @@ func TestCompressor(t *testing.T) {
 	})
 
 	t.Run("small responses under MaxCompressedSize are not truncated", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		r.Use(plugins.Compressor(plugins.CompressorConfig{
 			MaxCompressedSize: 100,
 		}))
@@ -356,7 +356,7 @@ func TestCompressor(t *testing.T) {
 	})
 
 	t.Run("buffered mode discards partial body when handler returns error", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		r.Use(plugins.Compressor())
 
 		r.GET("/test", func(w http.ResponseWriter, r *http.Request) error {
@@ -382,7 +382,7 @@ func TestCompressor(t *testing.T) {
 	})
 
 	t.Run("large fallback preserves committed headers", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		r.Use(plugins.Compressor(plugins.CompressorConfig{
 			MaxCompressedSize: 64,
 		}))
@@ -411,7 +411,7 @@ func TestCompressor(t *testing.T) {
 	})
 
 	t.Run("buffer overflow switches to identity passthrough", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		r.Use(plugins.Compressor(plugins.CompressorConfig{
 			MaxCompressedSize:       128,
 			MaxBufferedResponseSize: 32,
@@ -449,7 +449,7 @@ func TestCompressor(t *testing.T) {
 	})
 
 	t.Run("identity forbidden returns not acceptable on size fallback", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		r.Use(plugins.Compressor(plugins.CompressorConfig{
 			MaxCompressedSize: 40,
 		}))
@@ -471,7 +471,7 @@ func TestCompressor(t *testing.T) {
 	})
 
 	t.Run("head overflow does not emit a body", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		r.Use(plugins.Compressor(plugins.CompressorConfig{
 			MaxCompressedSize:       128,
 			MaxBufferedResponseSize: 32,

@@ -2,9 +2,11 @@ package server
 
 import "github.com/webdeveloperben/tyche/server/validation"
 
-type ValidationError = validation.Error
-type ValidationProblem = validation.Problem
-type ValidationSubject = validation.Subject
+type (
+	ValidationError   = validation.Error
+	ValidationProblem = validation.Problem
+	ValidationSubject = validation.Subject
+)
 
 const (
 	ValidationSubjectString     = validation.SubjectString

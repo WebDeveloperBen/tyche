@@ -1,10 +1,13 @@
-// Package server provides HTTP server construction and routing using the standard library.
-// It offers configurable server setup, graceful shutdown, route groups, middleware,
-// and a radix tree router supporting params (:id) and wildcards (*path).
+// Package server provides typed HTTP handlers, OpenAPI generation, and a
+// bring-your-own-router adapter model. An [API] owns request binding,
+// validation, response serialization, middleware, and the OpenAPI document,
+// and delegates path matching to a pluggable [Adapter] — the standard-library
+// [ServeMuxAdapter] by default, or any router you wrap. Route patterns support
+// params (:id) and a trailing wildcard (*path).
 //
-// Beyond basic routing it provides:
+// Beyond routing it provides:
 //
-//   - Middleware at root, group, and route scope (see Middleware, Group.Use,
+//   - Middleware at root, group, and route scope (see Middleware, APIGroup.Use,
 //     WithMiddleware, Chain, and MiddlewareFromFunc).
 //   - Typed route registration with OpenAPI output (Register) and typed
 //     Server-Sent Events streaming (RegisterStream, EventStream, Stream).

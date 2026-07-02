@@ -12,7 +12,7 @@ import (
 
 func TestCORS(t *testing.T) {
 	t.Run("allows requests without Origin header", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		mw, err := plugins.CORS()
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -34,7 +34,7 @@ func TestCORS(t *testing.T) {
 	})
 
 	t.Run("allows wildcard origin", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		mw, err := plugins.CORS(plugins.CORSConfig{
 			AllowedOrigins: []string{"*"},
 		})
@@ -58,7 +58,7 @@ func TestCORS(t *testing.T) {
 	})
 
 	t.Run("allows specific origin", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		mw, err := plugins.CORS(plugins.CORSConfig{
 			AllowedOrigins: []string{"http://example.com"},
 		})
@@ -82,7 +82,7 @@ func TestCORS(t *testing.T) {
 	})
 
 	t.Run("denies disallowed origin", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		mw, err := plugins.CORS(plugins.CORSConfig{
 			AllowedOrigins: []string{"http://example.com"},
 		})
@@ -106,7 +106,7 @@ func TestCORS(t *testing.T) {
 	})
 
 	t.Run("handles subdomain wildcard", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		mw, err := plugins.CORS(plugins.CORSConfig{
 			AllowedOrigins: []string{"*.example.com"},
 		})
@@ -132,7 +132,7 @@ func TestCORS(t *testing.T) {
 	})
 
 	t.Run("denies non-matching subdomain wildcard", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		mw, err := plugins.CORS(plugins.CORSConfig{
 			AllowedOrigins: []string{"*.example.com"},
 		})
@@ -156,7 +156,7 @@ func TestCORS(t *testing.T) {
 	})
 
 	t.Run("uses AllowOriginFunc callback", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		mw, err := plugins.CORS(plugins.CORSConfig{
 			AllowedMethods: []string{http.MethodGet},
 			AllowOriginFunc: func(r *http.Request, origin string) bool {
@@ -183,7 +183,7 @@ func TestCORS(t *testing.T) {
 	})
 
 	t.Run("preflight request returns proper headers", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		mw, err := plugins.CORS(plugins.CORSConfig{
 			AllowedOrigins:   []string{"http://example.com"},
 			AllowedMethods:   []string{http.MethodGet, http.MethodPost},
@@ -225,7 +225,7 @@ func TestCORS(t *testing.T) {
 	})
 
 	t.Run("preflight with disallowed method returns 204 without method header", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		mw, err := plugins.CORS(plugins.CORSConfig{
 			AllowedOrigins: []string{"http://example.com"},
 			AllowedMethods: []string{http.MethodGet},
@@ -259,7 +259,7 @@ func TestCORS(t *testing.T) {
 	})
 
 	t.Run("sets Vary header", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		mw, err := plugins.CORS()
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -281,7 +281,7 @@ func TestCORS(t *testing.T) {
 	})
 
 	t.Run("exposes headers with Access-Control-Expose-Headers", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		mw, err := plugins.CORS(plugins.CORSConfig{
 			AllowedOrigins: []string{"http://example.com"},
 			ExposedHeaders: []string{"X-Custom-Header"},
@@ -306,7 +306,7 @@ func TestCORS(t *testing.T) {
 	})
 
 	t.Run("canonicalizes header names", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		mw, err := plugins.CORS(plugins.CORSConfig{
 			AllowedHeaders: []string{"x-custom-header", "content-type"},
 		})

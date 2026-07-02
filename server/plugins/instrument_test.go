@@ -12,7 +12,7 @@ import (
 
 func TestInstrument_CapturesRequestInfo(t *testing.T) {
 	var got plugins.RequestInfo
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	router.Use(plugins.Instrument(plugins.ObserverFunc(func(i plugins.RequestInfo) {
 		got = i
 	})))
@@ -47,7 +47,7 @@ func TestInstrument_CapturesRequestInfo(t *testing.T) {
 
 func TestInstrument_CapturesError(t *testing.T) {
 	var got plugins.RequestInfo
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	router.Use(plugins.Instrument(plugins.ObserverFunc(func(i plugins.RequestInfo) { got = i })))
 
 	router.GET("/boom", func(w http.ResponseWriter, r *http.Request) error {
@@ -62,7 +62,7 @@ func TestInstrument_CapturesError(t *testing.T) {
 }
 
 func TestInstrument_StreamingSafeFlusher(t *testing.T) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	router.Use(plugins.Instrument(plugins.ObserverFunc(func(plugins.RequestInfo) {})))
 
 	router.GET("/stream", func(w http.ResponseWriter, r *http.Request) error {
@@ -86,7 +86,7 @@ func TestInstrument_StreamingSafeFlusher(t *testing.T) {
 
 func TestInstrumentHTTP_AccurateStatusOnError(t *testing.T) {
 	var got plugins.RequestInfo
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	router.UseHTTP(plugins.InstrumentHTTP(plugins.ObserverFunc(func(i plugins.RequestInfo) { got = i })))
 
 	router.GET("/boom", func(w http.ResponseWriter, r *http.Request) error {
@@ -110,7 +110,7 @@ func TestInstrumentHTTP_AccurateStatusOnError(t *testing.T) {
 
 func TestInstrumentHTTP_CapturesNotFound(t *testing.T) {
 	var got plugins.RequestInfo
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	router.UseHTTP(plugins.InstrumentHTTP(plugins.ObserverFunc(func(i plugins.RequestInfo) { got = i })))
 
 	router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/missing", nil))
@@ -121,7 +121,7 @@ func TestInstrumentHTTP_CapturesNotFound(t *testing.T) {
 }
 
 func TestInstrumentHTTP_StreamingSafe(t *testing.T) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	router.UseHTTP(plugins.InstrumentHTTP(plugins.ObserverFunc(func(plugins.RequestInfo) {})))
 	router.GET("/stream", func(w http.ResponseWriter, r *http.Request) error {
 		stream, err := server.NewEventStream(w, r)
@@ -138,7 +138,7 @@ func TestInstrumentHTTP_StreamingSafe(t *testing.T) {
 }
 
 func TestInstrument_NilObserverIsNoop(t *testing.T) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	router.Use(plugins.Instrument(nil))
 	router.GET("/x", func(w http.ResponseWriter, r *http.Request) error {
 		w.WriteHeader(http.StatusOK)

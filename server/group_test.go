@@ -9,7 +9,7 @@ import (
 )
 
 func TestGroup_Basic(t *testing.T) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 
 	var called bool
 	g := router.Group("/api")
@@ -31,7 +31,7 @@ func TestGroup_Basic(t *testing.T) {
 }
 
 func TestGroup_Nested(t *testing.T) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 
 	var pathInHandler string
 	g1 := router.Group("/api")
@@ -56,7 +56,7 @@ func TestGroup_Nested(t *testing.T) {
 }
 
 func TestGroup_Middleware(t *testing.T) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 
 	var order []string
 
@@ -84,7 +84,7 @@ func TestGroup_Middleware(t *testing.T) {
 }
 
 func TestGroup_MultipleGroups(t *testing.T) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 
 	var api1Called, api2Called bool
 
@@ -118,7 +118,7 @@ func TestGroup_MultipleGroups(t *testing.T) {
 }
 
 func TestGroup_EmptyPrefix(t *testing.T) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 
 	var called bool
 	g := router.Group("")
@@ -137,7 +137,7 @@ func TestGroup_EmptyPrefix(t *testing.T) {
 }
 
 func TestGroup_AllHTTPMethods(t *testing.T) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 
 	g := router.Group("/api")
 
@@ -185,7 +185,7 @@ func TestGroup_AllHTTPMethods(t *testing.T) {
 }
 
 func TestGroup_UseAddsMiddleware(t *testing.T) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 
 	var order []string
 
@@ -220,7 +220,7 @@ func TestGroup_UseAddsMiddleware(t *testing.T) {
 }
 
 func TestGroup_SiblingMiddlewareDoesNotLeak(t *testing.T) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	var calls []string
 
 	api := router.Group("/api", func(next server.HandlerFunc) server.HandlerFunc {
@@ -261,7 +261,7 @@ func TestGroup_SiblingMiddlewareDoesNotLeak(t *testing.T) {
 }
 
 func TestGroup_ParentUseAfterChildCreationRebuildsHandlers(t *testing.T) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	var calls []string
 
 	parent := router.Group("/api")

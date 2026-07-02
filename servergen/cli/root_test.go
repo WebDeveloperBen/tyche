@@ -90,7 +90,7 @@ type output struct {
 	} `+"`body:\"true\"`"+`
 }
 
-func Register(router *server.Router) {
+func Register(router *server.API) {
 	api := router.Group("/api")
 	server.Register(api, server.Operation{
 		OperationID: "fixture-ok",
@@ -111,7 +111,7 @@ import (
 )
 
 func main() {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	routes.Register(router)
 }
 `)
@@ -164,7 +164,7 @@ type output struct {
 	} `+"`body:\"true\"`"+`
 }
 
-func Register(router *server.Router) {
+func Register(router *server.API) {
 	api := router.Group("/api")
 	server.Register(api, server.Operation{
 		OperationID: "fixture-binary",
@@ -185,7 +185,7 @@ import (
 )
 
 func main() {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	routes.Register(router)
 }
 `)

@@ -63,7 +63,7 @@ type Output struct {
 	} `body:"true"`
 }
 
-func RegisterTypedRoutes(group *server.Group) {
+func RegisterTypedRoutes(group *server.APIGroup) {
 	server.Register(group, server.Operation{
 		OperationID: "benchmark-typed-static",
 		Method:      http.MethodGet,

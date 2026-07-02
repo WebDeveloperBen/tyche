@@ -11,7 +11,7 @@ import (
 )
 
 func TestServer_Basic(t *testing.T) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	router.GET("/test", func(w http.ResponseWriter, r *http.Request) error {
 		_, _ = w.Write([]byte("OK"))
 		return nil
@@ -44,7 +44,7 @@ func TestServer_DefaultConfig(t *testing.T) {
 }
 
 func TestServer_ListenAndServeTLS(t *testing.T) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	router.GET("/test", func(w http.ResponseWriter, r *http.Request) error {
 		_, _ = w.Write([]byte("OK"))
 		return nil

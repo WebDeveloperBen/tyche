@@ -81,7 +81,7 @@ type FlatThingResponse struct {
 	} `body:"true"`
 }
 
-func RegisterRoutes(grp *server.Group, store Store) {
+func RegisterRoutes(grp *server.APIGroup, store Store) {
 	server.Register(grp, server.Operation{
 		OperationID: "get-thing",
 		Method:      http.MethodGet,

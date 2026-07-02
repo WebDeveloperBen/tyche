@@ -11,7 +11,7 @@ import (
 )
 
 func TestMount_WithScalarAndRedoc(t *testing.T) {
-	router := server.NewRouterWithConfig(server.RouterConfig{
+	router := server.NewAPI(server.NewServeMuxAdapter(), server.APIConfig{
 		OpenAPI: server.OpenAPIInfo{
 			Title: "Homebase API",
 		},

@@ -56,7 +56,7 @@ type realIPMiddleware struct {
 	trustedCIDRs []*net.IPNet
 }
 
-func (m *realIPMiddleware) Register(r *server.Router) {
+func (m *realIPMiddleware) Register(r *server.API) {
 	r.Use(m.Middleware())
 }
 

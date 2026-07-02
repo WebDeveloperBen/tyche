@@ -384,7 +384,7 @@ func TestParseRequest_Validation(t *testing.T) {
 
 func TestRegister_Integration(t *testing.T) {
 	registerTypedTestCodecs()
-	srvRouter := server.NewRouter()
+	srvRouter := server.NewAPI(server.NewServeMuxAdapter())
 	protected := srvRouter.Group("/api/v1")
 
 	server.Register(protected, server.Operation{
@@ -513,7 +513,7 @@ func TestRegister_Integration(t *testing.T) {
 
 func TestRegister_DefaultStatusDoesNotLeakAcrossRoutes(t *testing.T) {
 	registerTypedTestCodecs()
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	api := router.Group("/api")
 
 	server.Register(api, server.Operation{
@@ -556,7 +556,7 @@ func TestRegister_DefaultStatusDoesNotLeakAcrossRoutes(t *testing.T) {
 
 func TestRegister_DuplicateOperationIDPanics(t *testing.T) {
 	registerTypedTestCodecs()
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	api := router.Group("/api")
 
 	server.Register(api, server.Operation{
@@ -585,7 +585,7 @@ func TestRegister_DuplicateOperationIDPanics(t *testing.T) {
 func TestRegister_RequireGeneratedCodecPanicsWhenMissing(t *testing.T) {
 	// Register always requires a generated codec and fails explicitly when one
 	// is missing (no reflection fallback).
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	api := router.Group("/api")
 
 	defer func() {
@@ -605,7 +605,7 @@ func TestRegister_RequireGeneratedCodecPanicsWhenMissing(t *testing.T) {
 
 func TestRegister_ErrorResponseMatchesOpenAPIContract(t *testing.T) {
 	registerTypedTestCodecs()
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	api := router.Group("/api")
 
 	server.Register(api, server.Operation{
@@ -648,7 +648,7 @@ func TestRegister_ErrorResponseMatchesOpenAPIContract(t *testing.T) {
 }
 
 func TestParseRequest_EnforcesRouterBodyLimit(t *testing.T) {
-	router := server.NewRouterWithConfig(server.RouterConfig{MaxRequestBodyBytes: 8})
+	router := server.NewAPI(server.NewServeMuxAdapter(), server.APIConfig{MaxRequestBodyBytes: 8})
 	api := router.Group("/api")
 
 	type input struct {
@@ -712,7 +712,7 @@ func TestParseRequest_EnforcesRouterBodyLimit(t *testing.T) {
 
 func TestRegister_HeadResponseHasNoBody(t *testing.T) {
 	registerTypedTestCodecs()
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	api := router.Group("/api")
 
 	server.Register(api, server.Operation{
@@ -741,7 +741,7 @@ func TestRegister_NoBodyStatusDocsAndRuntime(t *testing.T) {
 		Body   struct{} `body:"true"`
 	}
 
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	api := router.Group("/api")
 
 	server.RegisterGeneratedCodec(server.GeneratedRouteMeta{
@@ -791,7 +791,7 @@ func TestRegister_NoBodyStatusDocsAndRuntime(t *testing.T) {
 
 func TestRouter_MountOpenAPI(t *testing.T) {
 	registerTypedTestCodecs()
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	api := router.Group("/api")
 
 	server.Register(api, server.Operation{
@@ -832,7 +832,7 @@ func TestRouter_MountOpenAPI(t *testing.T) {
 }
 
 func TestAPIDocsMount_Scalar(t *testing.T) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	if err := apidocs.Mount(router, apidocs.Config{
 		Title:    "Homebase API",
 		SpecPath: "/openapi.json",
@@ -873,7 +873,7 @@ func TestAPIDocsMount_Scalar(t *testing.T) {
 }
 
 func TestNewRouter_UsesOpenAPIConfig(t *testing.T) {
-	router := server.NewRouterWithConfig(server.RouterConfig{
+	router := server.NewAPI(server.NewServeMuxAdapter(), server.APIConfig{
 		OpenAPI: server.OpenAPIInfo{
 			Title:       "Homebase API",
 			Description: "Internal API",

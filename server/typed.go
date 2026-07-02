@@ -30,7 +30,7 @@ type Operation struct {
 	SkipValidateRequest bool
 	// Security lists the security requirements for this operation. Each entry
 	// is a set of scheme names (referencing schemes registered via
-	// [Router.AddSecurityScheme]) that must all be satisfied; multiple entries
+	// [API.AddSecurityScheme]) that must all be satisfied; multiple entries
 	// are alternatives (logical OR). The value for each scheme is the list of
 	// required OAuth2 scopes, or an empty slice for non-OAuth2 schemes. Use
 	// [SecurityRequirement] to build entries.
@@ -55,31 +55,13 @@ type RegisteredOperation struct {
 	OutputType  reflect.Type
 }
 
-func (r *Router) OpenAPI() *openapi.OpenAPI {
-	if r.openapiDoc == nil {
-		r.openapiDoc = openapi.NewOpenAPI("API", "1.0.0")
-	}
-	return r.openapiDoc
-}
-
-func (r *Router) SchemaRegistry() *openapi.Registry {
-	if r.schemaRegistry == nil {
-		r.schemaRegistry = openapi.NewRegistry("#/components/schemas")
-	}
-	return r.schemaRegistry
-}
-
-func (r *Router) RegisteredOperations() []RegisteredOperation {
-	return append([]RegisteredOperation(nil), r.operations...)
-}
-
-func Register[I, O any](grp *Group, op Operation, handler TypedHandler[I, O], opts ...RouteOption) {
+func Register[I, O any](grp RouteTarget, op Operation, handler TypedHandler[I, O], opts ...RouteOption) {
 	if err := RegisterE(grp, op, handler, opts...); err != nil {
 		panic(err)
 	}
 }
 
-func RegisterE[I, O any](grp *Group, op Operation, handler TypedHandler[I, O], opts ...RouteOption) error {
+func RegisterE[I, O any](grp RouteTarget, op Operation, handler TypedHandler[I, O], opts ...RouteOption) error {
 	if grp == nil {
 		return errors.New("group cannot be nil")
 	}
@@ -102,7 +84,7 @@ func RegisterE[I, O any](grp *Group, op Operation, handler TypedHandler[I, O], o
 		op.OperationID = fmt.Sprintf("%s-%s", strings.ToLower(op.Method), sanitizeOperationID(op.Path))
 	}
 	resolvedOp := op
-	for _, existing := range grp.router.operations {
+	for _, existing := range grp.apiOperations() {
 		if existing.OperationID == op.OperationID {
 			return fmt.Errorf("duplicate operation ID: %s", op.OperationID)
 		}
@@ -144,21 +126,20 @@ func RegisterE[I, O any](grp *Group, op Operation, handler TypedHandler[I, O], o
 		return codec.Write(w, req, out)
 	}
 
-	if err := grp.HandleE(op.Method, op.Path, httpHandler, opts...); err != nil {
+	if err := grp.handleRoute(op.Method, op.Path, httpHandler, resolveRouteOptions(opts)); err != nil {
 		return err
 	}
 	registerOpenAPIOperation(grp, op, inputType, outputType, outputSpec)
 	return nil
 }
 
-func registerOpenAPIOperation(grp *Group, op Operation, inputType, outputType reflect.Type, outputSpec *outputSpec) {
-	router := grp.router
-	doc := router.OpenAPI()
-	registry := router.SchemaRegistry()
+func registerOpenAPIOperation(grp RouteTarget, op Operation, inputType, outputType reflect.Type, outputSpec *outputSpec) {
+	doc := grp.apiDoc()
+	registry := grp.apiSchemaRegistry()
 
 	inputSchema := registry.Schema(inputType)
 	outputSchema := registry.Schema(outputType)
-	openAPIPath := ServerPathToOpenAPIPath(joinPath(grp.prefix, op.Path))
+	openAPIPath := ServerPathToOpenAPIPath(joinPath(grp.groupPrefix(), op.Path))
 
 	docOp := &openapi.Operation{
 		Summary:     op.Summary,
@@ -190,7 +171,7 @@ func registerOpenAPIOperation(grp *Group, op Operation, inputType, outputType re
 	}
 	doc.AddSchema(outputName, outputSchema)
 
-	router.operations = append(router.operations, RegisteredOperation{
+	grp.recordOperation(RegisteredOperation{
 		Method:      op.Method,
 		Path:        openAPIPath,
 		Summary:     op.Summary,
@@ -200,7 +181,7 @@ func registerOpenAPIOperation(grp *Group, op Operation, inputType, outputType re
 		InputType:   inputType,
 		OutputType:  outputType,
 	})
-	router.invalidateOpenAPICache()
+	grp.invalidateOpenAPI()
 }
 
 func extractParameters(t reflect.Type, registry *openapi.Registry) []*openapi.Parameter {

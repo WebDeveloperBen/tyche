@@ -20,7 +20,7 @@ func TestLogger(t *testing.T) {
 			err                 error
 		}
 
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		r.Use(plugins.Logger(plugins.LoggerConfig{
 			LogFunc: func(method, path, query string, status int, duration time.Duration, err error) {
 				logCalls = append(logCalls, struct {
@@ -61,7 +61,7 @@ func TestLogger(t *testing.T) {
 			err                 error
 		}
 
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		r.Use(plugins.Logger(plugins.LoggerConfig{
 			WithQuery: true,
 			LogFunc: func(method, path, query string, status int, duration time.Duration, err error) {
@@ -92,7 +92,7 @@ func TestLogger(t *testing.T) {
 	})
 
 	t.Run("logs request body when configured", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		var loggedBody string
 
 		r.Use(plugins.Logger(plugins.LoggerConfig{
@@ -123,7 +123,7 @@ func TestLogger(t *testing.T) {
 	t.Run("measures duration", func(t *testing.T) {
 		var loggedDuration time.Duration
 
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		r.Use(plugins.Logger(plugins.LoggerConfig{
 			DurationMs: true,
 			LogFunc: func(method, path, query string, status int, duration time.Duration, err error) {
@@ -148,7 +148,7 @@ func TestLogger(t *testing.T) {
 	t.Run("passes error to log function", func(t *testing.T) {
 		var loggedErr error
 
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		r.Use(plugins.Logger(plugins.LoggerConfig{
 			LogFunc: func(method, path, query string, status int, duration time.Duration, err error) {
 				loggedErr = err
@@ -169,7 +169,7 @@ func TestLogger(t *testing.T) {
 	})
 
 	t.Run("writes response with correct status", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		r.Use(plugins.Logger(plugins.LoggerConfig{
 			LogFunc: func(method, path, query string, status int, duration time.Duration, err error) {
 			},
@@ -190,7 +190,7 @@ func TestLogger(t *testing.T) {
 	})
 
 	t.Run("default LogFunc uses slog", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		r.Use(plugins.Logger())
 
 		r.GET("/test", func(w http.ResponseWriter, r *http.Request) error {

@@ -10,8 +10,8 @@ import (
 	typedroutes "github.com/webdeveloperben/tyche/servergen/testdata/samplepkg"
 )
 
-func benchmarkTypedRouter() *server.Router {
-	router := server.NewRouter()
+func benchmarkTypedRouter() *server.API {
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	typedroutes.RegisterTypedRoutes(router.Group(""))
 	return router
 }

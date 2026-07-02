@@ -40,7 +40,7 @@ type recovererMiddleware struct {
 	logger interface{ Error(...any) }
 }
 
-func (m *recovererMiddleware) Register(r *server.Router) {
+func (m *recovererMiddleware) Register(r *server.API) {
 	r.Use(m.Middleware())
 }
 

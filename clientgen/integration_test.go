@@ -65,7 +65,7 @@ func TestGenerate_FromRealServerSpec(t *testing.T) {
 		t.Skip("skipping compile-based integration test in -short mode")
 	}
 
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	api := router.Group("/v1")
 
 	server.Register(api, server.Operation{

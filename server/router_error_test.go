@@ -11,7 +11,7 @@ import (
 )
 
 func TestRouter_NonHTTPErrorReturnsInternalServerError(t *testing.T) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	router.GET("/boom", func(w http.ResponseWriter, r *http.Request) error {
 		return errors.New("boom")
 	})
@@ -38,7 +38,7 @@ func TestRouter_NonHTTPErrorReturnsInternalServerError(t *testing.T) {
 }
 
 func TestRouter_DuplicatePlainRoutePanics(t *testing.T) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	router.GET("/users", func(w http.ResponseWriter, r *http.Request) error { return nil })
 
 	defer func() {
@@ -51,7 +51,7 @@ func TestRouter_DuplicatePlainRoutePanics(t *testing.T) {
 }
 
 func TestHandleE_ReturnsErrorForUnsupportedMethod(t *testing.T) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	err := router.HandleE("FETCH", "/users", func(w http.ResponseWriter, r *http.Request) error { return nil })
 	if err == nil {
 		t.Fatal("expected unsupported method error")
@@ -59,7 +59,7 @@ func TestHandleE_ReturnsErrorForUnsupportedMethod(t *testing.T) {
 }
 
 func TestRouter_DoesNotWriteErrorAfterPartialResponse(t *testing.T) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	router.GET("/partial", func(w http.ResponseWriter, r *http.Request) error {
 		w.WriteHeader(http.StatusAccepted)
 		_, _ = w.Write([]byte("partial"))

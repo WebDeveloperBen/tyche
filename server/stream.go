@@ -255,7 +255,7 @@ type StreamHandler[I, O any] func(ctx context.Context, in *I, stream *Stream[O])
 
 // RegisterStream registers a typed Server-Sent Events endpoint. It panics on
 // invalid setup; use [RegisterStreamE] for the error-returning form.
-func RegisterStream[I, O any](grp *Group, op Operation, handler StreamHandler[I, O], opts ...RouteOption) {
+func RegisterStream[I, O any](grp RouteTarget, op Operation, handler StreamHandler[I, O], opts ...RouteOption) {
 	if err := RegisterStreamE(grp, op, handler, opts...); err != nil {
 		panic(err)
 	}
@@ -270,7 +270,7 @@ func RegisterStream[I, O any](grp *Group, op Operation, handler StreamHandler[I,
 // documented in OpenAPI as a text/event-stream whose data frames match type O.
 //
 // Root-, group-, and route-level middleware (via opts) all apply.
-func RegisterStreamE[I, O any](grp *Group, op Operation, handler StreamHandler[I, O], opts ...RouteOption) error {
+func RegisterStreamE[I, O any](grp RouteTarget, op Operation, handler StreamHandler[I, O], opts ...RouteOption) error {
 	if grp == nil {
 		return errors.New("group cannot be nil")
 	}
@@ -295,7 +295,7 @@ func RegisterStreamE[I, O any](grp *Group, op Operation, handler StreamHandler[I
 	if op.OperationID == "" {
 		op.OperationID = fmt.Sprintf("%s-%s", strings.ToLower(op.Method), sanitizeOperationID(op.Path))
 	}
-	for _, existing := range grp.router.operations {
+	for _, existing := range grp.apiOperations() {
 		if existing.OperationID == op.OperationID {
 			return fmt.Errorf("duplicate operation ID: %s", op.OperationID)
 		}
@@ -319,21 +319,20 @@ func RegisterStreamE[I, O any](grp *Group, op Operation, handler StreamHandler[I
 		return handler(req.Context(), input, &Stream[O]{es: es})
 	}
 
-	if err := grp.HandleE(op.Method, op.Path, httpHandler, opts...); err != nil {
+	if err := grp.handleRoute(op.Method, op.Path, httpHandler, resolveRouteOptions(opts)); err != nil {
 		return err
 	}
 	registerStreamOpenAPIOperation(grp, op, inputType, outputType)
 	return nil
 }
 
-func registerStreamOpenAPIOperation(grp *Group, op Operation, inputType, outputType reflect.Type) {
-	router := grp.router
-	doc := router.OpenAPI()
-	registry := router.SchemaRegistry()
+func registerStreamOpenAPIOperation(grp RouteTarget, op Operation, inputType, outputType reflect.Type) {
+	doc := grp.apiDoc()
+	registry := grp.apiSchemaRegistry()
 
 	inputSchema := registry.Schema(inputType)
 	outputSchema := registry.Schema(outputType)
-	openAPIPath := ServerPathToOpenAPIPath(joinPath(grp.prefix, op.Path))
+	openAPIPath := ServerPathToOpenAPIPath(joinPath(grp.groupPrefix(), op.Path))
 
 	responses := map[string]*openapi.Response{
 		"200": {
@@ -388,7 +387,7 @@ func registerStreamOpenAPIOperation(grp *Group, op Operation, inputType, outputT
 	}
 	doc.AddSchema(outputName, outputSchema)
 
-	router.operations = append(router.operations, RegisteredOperation{
+	grp.recordOperation(RegisteredOperation{
 		Method:      op.Method,
 		Path:        openAPIPath,
 		Summary:     op.Summary,
@@ -398,5 +397,5 @@ func registerStreamOpenAPIOperation(grp *Group, op Operation, inputType, outputT
 		InputType:   inputType,
 		OutputType:  outputType,
 	})
-	router.invalidateOpenAPICache()
+	grp.invalidateOpenAPI()
 }

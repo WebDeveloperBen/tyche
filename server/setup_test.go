@@ -34,7 +34,7 @@ func registerSetupTestCodecs() {
 }
 
 func TestHandleE_ReturnsErrorForInvalidPath(t *testing.T) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	if err := router.HandleE(http.MethodGet, "users", func(w http.ResponseWriter, r *http.Request) error { return nil }); err == nil {
 		t.Fatal("expected invalid path error")
 	}
@@ -42,7 +42,7 @@ func TestHandleE_ReturnsErrorForInvalidPath(t *testing.T) {
 
 func TestRegisterE_ReturnsErrorForDuplicateOperationID(t *testing.T) {
 	registerSetupTestCodecs()
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	api := router.Group("/api")
 
 	err := server.RegisterE(api, server.Operation{

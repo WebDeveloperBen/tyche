@@ -12,7 +12,7 @@ import (
 )
 
 func TestAddSecurityScheme_AppearsInOpenAPI(t *testing.T) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	router.AddSecurityScheme("bearerAuth", server.BearerScheme("JWT"))
 	router.AddSecurityScheme("apiKey", server.APIKeyScheme("X-API-Key", "header"))
 
@@ -31,7 +31,7 @@ func TestAddSecurityScheme_AppearsInOpenAPI(t *testing.T) {
 }
 
 func TestSecurityScheme_SerializesToJSON(t *testing.T) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	router.AddSecurityScheme("basicAuth", server.BasicScheme())
 
 	body, err := json.Marshal(router.OpenAPI())
@@ -48,7 +48,7 @@ func TestSecurityScheme_SerializesToJSON(t *testing.T) {
 }
 
 func TestRegisterStream_OperationSecurity(t *testing.T) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	router.AddSecurityScheme("bearerAuth", server.BearerScheme("JWT"))
 	api := router.Group("/v1")
 
@@ -71,7 +71,7 @@ func TestRegisterStream_OperationSecurity(t *testing.T) {
 }
 
 func TestSecurityRequirement_NilScopesSerializeAsArray(t *testing.T) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	router.AddSecurityScheme("bearerAuth", server.BearerScheme("JWT"))
 	api := router.Group("/v1")
 
@@ -101,7 +101,7 @@ func TestSecurityRequirement_NilScopesSerializeAsArray(t *testing.T) {
 // ensure the security alias is usable directly too.
 func TestSecuritySchemeAlias(t *testing.T) {
 	s := server.SecurityScheme{Type: "http", Scheme: "bearer"}
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	router.AddSecurityScheme("x", &s)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/missing", nil)) // smoke

@@ -19,7 +19,7 @@ import (
 	"unicode/utf8"
 )
 
-// Client issues requests against an http.Handler (typically a *server.Router)
+// Client issues requests against an http.Handler (typically a *server.API)
 // using httptest, recording responses for assertions.
 type Client struct {
 	tb      testing.TB

@@ -9,7 +9,7 @@ import (
 )
 
 func TestMiddleware_Basic(t *testing.T) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 
 	var order []string
 
@@ -46,7 +46,7 @@ func TestMiddleware_Basic(t *testing.T) {
 }
 
 func TestMiddleware_Multiple(t *testing.T) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 
 	var order []string
 
@@ -87,7 +87,7 @@ func TestMiddleware_Multiple(t *testing.T) {
 }
 
 func TestMiddleware_ErrorInHandler(t *testing.T) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 
 	middleware := func(next server.HandlerFunc) server.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) error {
@@ -118,7 +118,7 @@ func TestMiddleware_ErrorInHandler(t *testing.T) {
 }
 
 func TestMiddleware_RequestContext(t *testing.T) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 
 	var idInHandler string
 

@@ -16,7 +16,7 @@ import (
 // when Use()/rebuildHandlers mutated a route's wrapped handler while in-flight
 // requests were reading it. Run with -race; it must stay clean.
 func TestUse_ConcurrentWithServing(t *testing.T) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	g := router.Group("")
 	g.GET("/x", func(w http.ResponseWriter, r *http.Request) error {
 		w.WriteHeader(http.StatusOK)
@@ -55,7 +55,7 @@ func TestUse_ConcurrentWithServing(t *testing.T) {
 }
 
 func TestErrorHandler_Custom(t *testing.T) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 
 	var gotPath string
 	router.SetErrorHandler(func(w http.ResponseWriter, r *http.Request, err error) {
@@ -85,7 +85,7 @@ func TestErrorHandler_Custom(t *testing.T) {
 
 func TestErrorHandler_ConfiguredViaConfig(t *testing.T) {
 	called := false
-	router := server.NewRouterWithConfig(server.RouterConfig{
+	router := server.NewAPI(server.NewServeMuxAdapter(), server.APIConfig{
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			called = true
 			w.WriteHeader(http.StatusBadGateway)
@@ -102,7 +102,7 @@ func TestErrorHandler_ConfiguredViaConfig(t *testing.T) {
 }
 
 func TestNotFound_DefaultProblemJSON(t *testing.T) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/missing", nil))
 
@@ -115,7 +115,7 @@ func TestNotFound_DefaultProblemJSON(t *testing.T) {
 }
 
 func TestNotFound_Custom(t *testing.T) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	router.SetNotFoundHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusGone)
 	}))
@@ -127,7 +127,7 @@ func TestNotFound_Custom(t *testing.T) {
 }
 
 func TestMethodNotAllowed_DefaultProblemJSON(t *testing.T) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	router.GET("/only-get", func(w http.ResponseWriter, r *http.Request) error { return nil })
 
 	rec := httptest.NewRecorder()
@@ -142,7 +142,7 @@ func TestMethodNotAllowed_DefaultProblemJSON(t *testing.T) {
 }
 
 func TestMethodNotAllowed_Custom(t *testing.T) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	router.GET("/only-get", func(w http.ResponseWriter, r *http.Request) error { return nil })
 	router.SetMethodNotAllowedHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Allow", "GET")
@@ -165,7 +165,7 @@ func readBodyHandler(w http.ResponseWriter, r *http.Request) error {
 }
 
 func TestWithMaxBodyBytes_OverridesGlobal(t *testing.T) {
-	router := server.NewRouterWithConfig(server.RouterConfig{MaxRequestBodyBytes: 8})
+	router := server.NewAPI(server.NewServeMuxAdapter(), server.APIConfig{MaxRequestBodyBytes: 8})
 
 	// Default route inherits the tiny global limit.
 	router.POST("/small", readBodyHandler)
@@ -196,7 +196,7 @@ func TestWithMaxBodyBytes_OverridesGlobal(t *testing.T) {
 }
 
 func TestMount_ServesPrefixAndSubpaths(t *testing.T) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 
 	sub := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -219,7 +219,7 @@ func TestMount_ServesPrefixAndSubpaths(t *testing.T) {
 }
 
 func TestMount_RejectsBadPrefix(t *testing.T) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	if err := router.Mount("debug", http.NotFoundHandler()); err == nil {
 		t.Error("expected error for prefix without leading slash")
 	}
@@ -232,7 +232,7 @@ func TestMount_RejectsBadPrefix(t *testing.T) {
 }
 
 func TestRoutePattern(t *testing.T) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 
 	var pattern string
 	router.GET("/users/:id", func(w http.ResponseWriter, r *http.Request) error {

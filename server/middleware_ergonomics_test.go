@@ -21,7 +21,7 @@ func recordMW(order *[]string, label string) server.Middleware {
 }
 
 func TestMiddlewareFromFunc(t *testing.T) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 
 	var order []string
 	mw := server.MiddlewareFromFunc(func(w http.ResponseWriter, r *http.Request, next server.HandlerFunc) error {
@@ -45,7 +45,7 @@ func TestMiddlewareFromFunc(t *testing.T) {
 }
 
 func TestChain_Order(t *testing.T) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 
 	var order []string
 	chained := server.Chain(
@@ -82,7 +82,7 @@ func (n namedMW) Middleware() server.Middleware {
 }
 
 func TestUseNamed(t *testing.T) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 
 	var order []string
 	router.UseNamed(
@@ -109,7 +109,7 @@ func TestContextKey_RoundTrip(t *testing.T) {
 	type claims struct{ Subject string }
 	key := server.NewContextKey[claims]("auth")
 
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	router.Use(func(next server.HandlerFunc) server.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) error {
 			return next(w, key.WithRequest(r, claims{Subject: "user-42"}))
@@ -148,7 +148,7 @@ func TestContextKey_MissingAndDistinct(t *testing.T) {
 }
 
 func TestWithMiddleware_RunsAfterGroup(t *testing.T) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 
 	var order []string
 	g := router.Group("", recordMW(&order, "group"))
@@ -167,7 +167,7 @@ func TestWithMiddleware_RunsAfterGroup(t *testing.T) {
 }
 
 func TestWithMiddleware_IsolatedPerRoute(t *testing.T) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 
 	var order []string
 	g := router.Group("", recordMW(&order, "group"))
@@ -186,7 +186,7 @@ func TestWithMiddleware_IsolatedPerRoute(t *testing.T) {
 }
 
 func TestWithMiddleware_SurvivesLateGroupUse(t *testing.T) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 
 	var order []string
 	g := router.Group("")

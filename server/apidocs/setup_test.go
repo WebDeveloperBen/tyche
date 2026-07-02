@@ -8,7 +8,7 @@ import (
 )
 
 func TestMount_ReturnsErrorForInvalidUIConfig(t *testing.T) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	err := apidocs.Mount(router, apidocs.Config{
 		UIs: []apidocs.UIMount{
 			{Path: "/docs"},

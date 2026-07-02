@@ -33,7 +33,7 @@ type timeoutMiddleware struct {
 	handlerTimeout time.Duration
 }
 
-func (m *timeoutMiddleware) Register(r *server.Router) {
+func (m *timeoutMiddleware) Register(r *server.API) {
 	r.Use(m.Middleware())
 }
 

@@ -61,28 +61,7 @@ type NamedMiddleware interface {
 	Middleware() Middleware
 }
 
-// UseNamed registers the [Middleware] of each [NamedMiddleware] at the router
-// root, preserving order.
-func (r *Router) UseNamed(mws ...NamedMiddleware) {
-	for _, m := range mws {
-		if m == nil {
-			continue
-		}
-		r.Use(m.Middleware())
-	}
-}
-
-// UseNamed registers the [Middleware] of each [NamedMiddleware] on the group,
-// preserving order. It returns the group for chaining.
-func (g *Group) UseNamed(mws ...NamedMiddleware) *Group {
-	for _, m := range mws {
-		if m == nil {
-			continue
-		}
-		g.Use(m.Middleware())
-	}
-	return g
-}
+// UseNamed is defined on API and APIGroup (see api.go).
 
 // routeOptions accumulates per-route configuration supplied via [RouteOption]
 // values when registering a single route.
@@ -112,7 +91,7 @@ func WithMiddleware(mw ...Middleware) RouteOption {
 }
 
 // WithMaxBodyBytes overrides the router-wide request body size limit
-// ([RouterConfig.MaxRequestBodyBytes]) for a single route. A positive value
+// ([APIConfig.MaxRequestBodyBytes]) for a single route. A positive value
 // caps the body at that many bytes; a value of 0 removes the limit for the
 // route entirely. This is useful when most endpoints want a small default but a
 // specific endpoint (a file upload, a large model prompt) needs a different

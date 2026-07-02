@@ -84,7 +84,7 @@ type tokenEvent struct {
 }
 
 func TestRegisterStream_EndToEnd(t *testing.T) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	api := router.Group("/v1")
 
 	server.RegisterStream(api, server.Operation{
@@ -115,7 +115,7 @@ func TestRegisterStream_EndToEnd(t *testing.T) {
 }
 
 func TestRegisterStream_ValidationErrorBeforeStream(t *testing.T) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	api := router.Group("/v1")
 
 	server.RegisterStream(api, server.Operation{
@@ -140,7 +140,7 @@ func TestRegisterStream_ValidationErrorBeforeStream(t *testing.T) {
 }
 
 func TestRegisterStream_RouteMiddlewareRuns(t *testing.T) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	api := router.Group("/v1")
 
 	var ran bool
@@ -169,7 +169,7 @@ func TestRegisterStream_RouteMiddlewareRuns(t *testing.T) {
 }
 
 func TestRegisterStream_DocumentedInOpenAPI(t *testing.T) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	api := router.Group("/v1")
 
 	server.RegisterStream(api, server.Operation{

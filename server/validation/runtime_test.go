@@ -56,18 +56,18 @@ func TestValidate_StringMin(t *testing.T) {
 	type S struct {
 		Name string `json:"name" validate:"min=3"`
 	}
-	assertSingleCode(t, validate(t, S{Name: "ab"}), "min")     // below
-	assertNoError(t, validate(t, S{Name: "abc"}))               // exact boundary
-	assertNoError(t, validate(t, S{Name: "abcd"}))              // above
+	assertSingleCode(t, validate(t, S{Name: "ab"}), "min") // below
+	assertNoError(t, validate(t, S{Name: "abc"}))          // exact boundary
+	assertNoError(t, validate(t, S{Name: "abcd"}))         // above
 }
 
 func TestValidate_StringMax(t *testing.T) {
 	type S struct {
 		Name string `json:"name" validate:"max=3"`
 	}
-	assertNoError(t, validate(t, S{Name: "abc"}))               // exact boundary
-	assertSingleCode(t, validate(t, S{Name: "abcd"}), "max")    // above
-	assertNoError(t, validate(t, S{Name: "ab"}))                // below
+	assertNoError(t, validate(t, S{Name: "abc"}))            // exact boundary
+	assertSingleCode(t, validate(t, S{Name: "abcd"}), "max") // above
+	assertNoError(t, validate(t, S{Name: "ab"}))             // below
 }
 
 func TestValidate_StringLen(t *testing.T) {
@@ -189,7 +189,7 @@ func TestValidate_MinItems(t *testing.T) {
 		Tags []string `json:"tags" validate:"minItems=2"`
 	}
 	assertSingleCode(t, validate(t, S{Tags: []string{"a"}}), "min_items")
-	assertNoError(t, validate(t, S{Tags: []string{"a", "b"}}))        // boundary
+	assertNoError(t, validate(t, S{Tags: []string{"a", "b"}})) // boundary
 	assertNoError(t, validate(t, S{Tags: []string{"a", "b", "c"}}))
 }
 
@@ -197,7 +197,7 @@ func TestValidate_MaxItems(t *testing.T) {
 	type S struct {
 		Tags []string `json:"tags" validate:"maxItems=2"`
 	}
-	assertNoError(t, validate(t, S{Tags: []string{"a", "b"}}))           // boundary
+	assertNoError(t, validate(t, S{Tags: []string{"a", "b"}})) // boundary
 	assertSingleCode(t, validate(t, S{Tags: []string{"a", "b", "c"}}), "max_items")
 }
 
@@ -346,10 +346,10 @@ func TestValidateUUID(t *testing.T) {
 		"",
 		"not-a-uuid",
 		"550e8400-e29b-41d4-a716-44665544000",   // too short
-		"550e8400-e29b-41d4-a716-4466554400000",  // too long
-		"550e8400xe29b-41d4-a716-446655440000",   // wrong separator at pos 8
-		"550e8400-e29b-41d4-a716-44665544000g",   // invalid hex char
-		"550e840g-e29b-41d4-a716-446655440000",   // invalid hex in first group
+		"550e8400-e29b-41d4-a716-4466554400000", // too long
+		"550e8400xe29b-41d4-a716-446655440000",  // wrong separator at pos 8
+		"550e8400-e29b-41d4-a716-44665544000g",  // invalid hex char
+		"550e840g-e29b-41d4-a716-446655440000",  // invalid hex in first group
 	}
 	for _, v := range invalid {
 		if validation.ValidateUUID(v) {
@@ -368,8 +368,8 @@ func TestStringLength(t *testing.T) {
 		{"", 0},
 		{"abc", 3},
 		{"hello world", 11},
-		{"👍", 1},           // 4 bytes, 1 rune
-		{"👍👍👍", 3},        // 12 bytes, 3 runes
+		{"👍", 1},            // 4 bytes, 1 rune
+		{"👍👍👍", 3},          // 12 bytes, 3 runes
 		{"中文", 2},           // 6 bytes, 2 runes
 		{"hello👍world", 11}, // mixed
 	}

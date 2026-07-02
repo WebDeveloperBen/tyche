@@ -9,7 +9,7 @@ import (
 )
 
 func TestRouter_BasicRouting(t *testing.T) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 
 	var called bool
 	router.GET("/test", func(w http.ResponseWriter, r *http.Request) error {
@@ -34,7 +34,7 @@ func TestRouter_BasicRouting(t *testing.T) {
 }
 
 func TestRouter_NotFound(t *testing.T) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 
 	router.GET("/exists", func(w http.ResponseWriter, r *http.Request) error {
 		return nil
@@ -50,7 +50,7 @@ func TestRouter_NotFound(t *testing.T) {
 }
 
 func TestRouter_AllMethods(t *testing.T) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 
 	methods := []string{
 		http.MethodGet,
@@ -105,7 +105,7 @@ func TestRouter_AllMethods(t *testing.T) {
 }
 
 func TestRouter_MethodMismatch(t *testing.T) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 
 	router.POST("/resource", func(w http.ResponseWriter, r *http.Request) error {
 		return nil
@@ -121,7 +121,7 @@ func TestRouter_MethodMismatch(t *testing.T) {
 }
 
 func TestRouter_RootPath(t *testing.T) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 
 	var called bool
 	router.GET("/", func(w http.ResponseWriter, r *http.Request) error {
@@ -149,7 +149,7 @@ func TestRouter_EmptyPattern(t *testing.T) {
 		}
 	}()
 
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	router.GET("test", func(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	})

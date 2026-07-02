@@ -11,7 +11,7 @@ import (
 
 func TestRecoverer(t *testing.T) {
 	t.Run("recovers from panic", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		r.Use(plugins.Recoverer())
 
 		r.GET("/panic", func(w http.ResponseWriter, r *http.Request) error {
@@ -28,7 +28,7 @@ func TestRecoverer(t *testing.T) {
 	})
 
 	t.Run("normal request passes through", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		r.Use(plugins.Recoverer())
 
 		var called bool
@@ -50,7 +50,7 @@ func TestRecoverer(t *testing.T) {
 	})
 
 	t.Run("subsequent requests work after panic", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		r.Use(plugins.Recoverer())
 
 		var subsequentCalled bool

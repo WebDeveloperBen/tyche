@@ -27,7 +27,7 @@ type Config struct {
 	UIs      []UIMount
 }
 
-func Mount(router *server.Router, cfg Config) error {
+func Mount(router *server.API, cfg Config) error {
 	if router == nil {
 		return errors.New("apidocs router is required")
 	}

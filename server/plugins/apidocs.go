@@ -9,7 +9,7 @@ type apiDocsPlugin struct {
 	cfg apidocs.Config
 }
 
-func (p apiDocsPlugin) Register(r *server.Router) error {
+func (p apiDocsPlugin) Register(r *server.API) error {
 	return apidocs.Mount(r, p.cfg)
 }
 

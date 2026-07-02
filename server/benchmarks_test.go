@@ -25,7 +25,7 @@ type benchmarkValidationInput struct {
 }
 
 func BenchmarkRouter_StaticRoute(b *testing.B) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	router.GET("/api/users", func(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	})
@@ -41,7 +41,7 @@ func BenchmarkRouter_StaticRoute(b *testing.B) {
 }
 
 func BenchmarkRouter_ParamRoute(b *testing.B) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	router.GET("/api/users/:id", func(w http.ResponseWriter, r *http.Request) error {
 		_ = server.Param(r, "id")
 		return nil
@@ -58,7 +58,7 @@ func BenchmarkRouter_ParamRoute(b *testing.B) {
 }
 
 func BenchmarkRouter_WildcardRoute(b *testing.B) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	router.GET("/files/*", func(w http.ResponseWriter, r *http.Request) error {
 		_ = server.Wildcard(r)
 		return nil
@@ -75,7 +75,7 @@ func BenchmarkRouter_WildcardRoute(b *testing.B) {
 }
 
 func BenchmarkRouter_DeepNesting(b *testing.B) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	router.GET("/a/b/c/d/e/f", func(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	})
@@ -91,7 +91,7 @@ func BenchmarkRouter_DeepNesting(b *testing.B) {
 }
 
 func BenchmarkRouter_NotFound(b *testing.B) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	router.GET("/api/users", func(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	})
@@ -107,7 +107,7 @@ func BenchmarkRouter_NotFound(b *testing.B) {
 }
 
 func BenchmarkRouter_ManyStaticRoutes(b *testing.B) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	routes := []string{
 		"/api/users", "/api/posts", "/api/comments", "/api/tags",
 		"/api/users/:id", "/api/posts/:id", "/api/comments/:id",
@@ -132,7 +132,7 @@ func BenchmarkRouter_ManyStaticRoutes(b *testing.B) {
 }
 
 func BenchmarkRouter_ParamLookup(b *testing.B) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	router.GET("/api/:version/:resource/:id", func(w http.ResponseWriter, r *http.Request) error {
 		_ = server.Param(r, "version")
 		_ = server.Param(r, "resource")
@@ -177,7 +177,7 @@ func BenchmarkStringOps(b *testing.B) {
 }
 
 func BenchmarkRouter_WithMiddleware(b *testing.B) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 
 	router.Use(func(next server.HandlerFunc) server.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) error {
@@ -310,7 +310,7 @@ func BenchmarkValidation_StringLengthUnicode(b *testing.B) {
 }
 
 func BenchmarkRouter_WithMultipleMiddleware(b *testing.B) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 
 	for range 3 {
 		router.Use(func(next server.HandlerFunc) server.HandlerFunc {
@@ -335,7 +335,7 @@ func BenchmarkRouter_WithMultipleMiddleware(b *testing.B) {
 }
 
 func BenchmarkRouter_405MethodNotAllowed(b *testing.B) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	router.POST("/api/users", func(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	})
@@ -351,7 +351,7 @@ func BenchmarkRouter_405MethodNotAllowed(b *testing.B) {
 }
 
 func BenchmarkRouter_RootRoute(b *testing.B) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	router.GET("/", func(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	})
@@ -367,7 +367,7 @@ func BenchmarkRouter_RootRoute(b *testing.B) {
 }
 
 func BenchmarkRouter_GroupRouting(b *testing.B) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	g := router.Group("/api")
 	g.GET("/users", func(w http.ResponseWriter, r *http.Request) error {
 		return nil
@@ -387,7 +387,7 @@ func BenchmarkRouter_GroupRouting(b *testing.B) {
 }
 
 func BenchmarkRouter_MixedRoutes(b *testing.B) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 
 	api := router.Group("/api/v1")
 	api.GET("/users", func(w http.ResponseWriter, r *http.Request) error { return nil })
@@ -419,7 +419,7 @@ func BenchmarkRouter_MixedRoutes(b *testing.B) {
 }
 
 func BenchmarkRouter_LargePath(b *testing.B) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 	router.GET("/api/v1/users/profile/settings/security/two-factor/enable", func(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	})
@@ -451,42 +451,8 @@ func BenchmarkHasPathTraversal(b *testing.B) {
 	}
 }
 
-func BenchmarkTreeFind(b *testing.B) {
-	router := server.NewRouter()
-	router.GET("/api/users", func(w http.ResponseWriter, r *http.Request) error { return nil })
-	router.GET("/api/users/:id", func(w http.ResponseWriter, r *http.Request) error { return nil })
-	router.GET("/api/posts/:id", func(w http.ResponseWriter, r *http.Request) error { return nil })
-
-	req := httptest.NewRequest(http.MethodGet, "/api/users/123", nil)
-	path := req.URL.Path
-
-	b.ReportAllocs()
-
-	for b.Loop() {
-		_ = router.Root.Find(http.MethodGet, path)
-	}
-}
-
-func BenchmarkMethodIndex(b *testing.B) {
-	methods := []string{
-		http.MethodGet,
-		http.MethodPost,
-		http.MethodPut,
-		http.MethodDelete,
-		http.MethodPatch,
-		http.MethodOptions,
-		http.MethodHead,
-	}
-
-	b.ReportAllocs()
-
-	for i := 0; b.Loop(); i++ {
-		_ = server.MethodIndex(methods[i%len(methods)])
-	}
-}
-
 func BenchmarkRouter_RealisticAPI(b *testing.B) {
-	router := server.NewRouter()
+	router := server.NewAPI(server.NewServeMuxAdapter())
 
 	router.GET("/", func(w http.ResponseWriter, r *http.Request) error { return nil })
 	router.GET("/health", func(w http.ResponseWriter, r *http.Request) error { return nil })

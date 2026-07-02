@@ -16,10 +16,8 @@ type SecurityScheme = openapi.SecurityScheme
 //	router.AddSecurityScheme("bearer", server.BearerScheme("JWT"))
 //
 //	server.Register(api, op, handler) // op.Security: []server.SecurityRequirement{{"bearer": {}}}
-func (r *Router) AddSecurityScheme(name string, scheme *SecurityScheme) {
-	r.OpenAPI().AddSecurityScheme(name, scheme)
-	r.invalidateOpenAPICache()
-}
+//
+// AddSecurityScheme is defined on API (see api.go).
 
 // APIKeyScheme describes an API key carried in a header, query parameter, or
 // cookie. in must be one of "header", "query", or "cookie".

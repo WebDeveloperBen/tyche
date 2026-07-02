@@ -89,7 +89,7 @@ func Instrument(obs RequestObserver) server.Middleware {
 	}
 }
 
-// InstrumentHTTP returns http.Handler middleware (for [server.Router.UseHTTP])
+// InstrumentHTTP returns http.Handler middleware (for [server.API.UseHTTP])
 // that records timing, the final response status, and bytes written for every
 // request — including responses produced by the router's error handler and the
 // not-found / method-not-allowed handlers. It wraps the whole router, so unlike
@@ -136,7 +136,7 @@ type InstrumentPlugin struct {
 }
 
 // Register installs the instrumentation middleware on the router.
-func (p InstrumentPlugin) Register(r *server.Router) error {
+func (p InstrumentPlugin) Register(r *server.API) error {
 	r.Use(Instrument(p.Observer))
 	return nil
 }
@@ -147,7 +147,7 @@ type InstrumentHTTPPlugin struct {
 }
 
 // Register installs the http.Handler-level instrumentation on the router.
-func (p InstrumentHTTPPlugin) Register(r *server.Router) error {
+func (p InstrumentHTTPPlugin) Register(r *server.API) error {
 	r.UseHTTP(InstrumentHTTP(p.Observer))
 	return nil
 }

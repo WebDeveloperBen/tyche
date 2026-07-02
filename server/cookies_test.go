@@ -10,7 +10,7 @@ import (
 
 func TestCookies(t *testing.T) {
 	t.Run("SetCookie sets a cookie", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		r.GET("/set", func(w http.ResponseWriter, r *http.Request) error {
 			server.SetCookie(w, server.CookieConfig{
 				Name:     "session",
@@ -42,7 +42,7 @@ func TestCookies(t *testing.T) {
 	})
 
 	t.Run("SetCookieDefault sets a secure cookie", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		r.GET("/set", func(w http.ResponseWriter, r *http.Request) error {
 			server.SetCookieDefault(w, "theme", "dark")
 			return nil
@@ -68,7 +68,7 @@ func TestCookies(t *testing.T) {
 	})
 
 	t.Run("GetCookie reads a cookie", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		var gotValue string
 		r.GET("/get", func(w http.ResponseWriter, r *http.Request) error {
 			val, err := server.GetCookie(r, "session")
@@ -90,7 +90,7 @@ func TestCookies(t *testing.T) {
 	})
 
 	t.Run("GetCookie returns error for missing cookie", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		r.GET("/get", func(w http.ResponseWriter, r *http.Request) error {
 			_, err := server.GetCookie(r, "nonexistent")
 			if err != http.ErrNoCookie {
@@ -105,7 +105,7 @@ func TestCookies(t *testing.T) {
 	})
 
 	t.Run("GetCookieOr returns default for missing cookie", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		var gotValue string
 		r.GET("/get", func(w http.ResponseWriter, r *http.Request) error {
 			gotValue = server.GetCookieOr(r, "theme", "light")
@@ -122,7 +122,7 @@ func TestCookies(t *testing.T) {
 	})
 
 	t.Run("DeleteCookie removes a cookie", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		r.GET("/delete", func(w http.ResponseWriter, r *http.Request) error {
 			server.DeleteCookie(w, "session")
 			return nil

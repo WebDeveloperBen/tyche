@@ -13,7 +13,7 @@ import (
 
 func TestTimeout(t *testing.T) {
 	t.Run("completes within timeout", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		r.Use(plugins.Timeout(plugins.TimeoutConfig{Timeout: 100 * time.Millisecond}))
 
 		r.GET("/test", func(w http.ResponseWriter, r *http.Request) error {
@@ -32,7 +32,7 @@ func TestTimeout(t *testing.T) {
 	})
 
 	t.Run("returns 504 on timeout", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		r.Use(plugins.Timeout(plugins.TimeoutConfig{Timeout: 50 * time.Millisecond}))
 
 		r.GET("/test", func(w http.ResponseWriter, r *http.Request) error {
@@ -50,7 +50,7 @@ func TestTimeout(t *testing.T) {
 	})
 
 	t.Run("context is cancelled on timeout", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		r.Use(plugins.Timeout(plugins.TimeoutConfig{Timeout: 50 * time.Millisecond}))
 
 		ctx := t.Context()
@@ -79,7 +79,7 @@ func TestTimeout(t *testing.T) {
 	})
 
 	t.Run("respects context deadline from request", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		r.Use(plugins.Timeout(plugins.TimeoutConfig{Timeout: 5 * time.Second}))
 
 		r.GET("/test", func(w http.ResponseWriter, r *http.Request) error {
@@ -104,7 +104,7 @@ func TestTimeout(t *testing.T) {
 	})
 
 	t.Run("uses default timeout", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		r.Use(plugins.Timeout())
 
 		var ctx context.Context
@@ -133,7 +133,7 @@ func TestTimeout(t *testing.T) {
 	})
 
 	t.Run("handler can use context for cleanup", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		r.Use(plugins.Timeout(plugins.TimeoutConfig{Timeout: 50 * time.Millisecond}))
 
 		ctx := t.Context()
@@ -164,7 +164,7 @@ func TestTimeout(t *testing.T) {
 
 func TestTimeoutResponseRace(t *testing.T) {
 	t.Run("handler completing before timeout returns handler status", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		r.Use(plugins.Timeout(plugins.TimeoutConfig{Timeout: 200 * time.Millisecond}))
 
 		handlerReturned := make(chan struct{})
@@ -189,7 +189,7 @@ func TestTimeoutResponseRace(t *testing.T) {
 	})
 
 	t.Run("timeout before handler writes header returns 504", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		r.Use(plugins.Timeout(plugins.TimeoutConfig{Timeout: 10 * time.Millisecond}))
 
 		handlerReturned := make(chan struct{})
@@ -221,7 +221,7 @@ func TestTimeoutResponseRace(t *testing.T) {
 	})
 
 	t.Run("request context cancellation returns error", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		r.Use(plugins.Timeout(plugins.TimeoutConfig{Timeout: 10 * time.Second}))
 
 		ctx, cancel := context.WithCancel(context.Background())

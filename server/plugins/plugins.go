@@ -5,7 +5,7 @@ import (
 )
 
 type Plugin interface {
-	Register(r *server.Router) error
+	Register(r *server.API) error
 }
 
 type PluginRegistry struct {
@@ -16,7 +16,7 @@ func NewRegistry() *PluginRegistry {
 	return &PluginRegistry{}
 }
 
-func Register(router *server.Router, plugins ...Plugin) error {
+func Register(router *server.API, plugins ...Plugin) error {
 	return NewRegistry().AddAll(plugins...).Register(router)
 }
 
@@ -30,7 +30,7 @@ func (r *PluginRegistry) AddAll(plugins ...Plugin) *PluginRegistry {
 	return r
 }
 
-func (r *PluginRegistry) Register(router *server.Router) error {
+func (r *PluginRegistry) Register(router *server.API) error {
 	for _, p := range r.plugins {
 		if err := p.Register(router); err != nil {
 			return err

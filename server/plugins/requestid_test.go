@@ -13,7 +13,7 @@ import (
 
 func TestRequestID(t *testing.T) {
 	t.Run("generates UUID for request", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		r.Use(plugins.RequestID())
 
 		var requestID string
@@ -37,7 +37,7 @@ func TestRequestID(t *testing.T) {
 	})
 
 	t.Run("returns X-Request-ID header", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		r.Use(plugins.RequestID())
 
 		r.GET("/test", func(w http.ResponseWriter, r *http.Request) error {
@@ -58,7 +58,7 @@ func TestRequestID(t *testing.T) {
 	})
 
 	t.Run("uses client-provided request ID", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		r.Use(plugins.RequestID())
 
 		clientID := "client-request-123"
@@ -84,7 +84,7 @@ func TestRequestID(t *testing.T) {
 	})
 
 	t.Run("uses custom header name", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		r.Use(plugins.RequestID(plugins.RequestIDConfig{
 			HeaderName: "X-Request-Context",
 		}))
@@ -115,7 +115,7 @@ func TestRequestID(t *testing.T) {
 	})
 
 	t.Run("header is not duplicated if already set", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		r.Use(plugins.RequestID())
 
 		r.GET("/test", func(w http.ResponseWriter, r *http.Request) error {

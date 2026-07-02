@@ -15,7 +15,7 @@ type RateLimitConfig struct {
 
 type RateLimitMiddleware interface {
 	Middleware() server.Middleware
-	Register(r *server.Router) func()
+	Register(r *server.API) func()
 	Stop()
 }
 
@@ -87,7 +87,7 @@ func (m *rateLimitMiddleware) Stop() {
 	close(m.closed)
 }
 
-func (m *rateLimitMiddleware) Register(r *server.Router) func() {
+func (m *rateLimitMiddleware) Register(r *server.API) func() {
 	r.Use(m.Middleware())
 	return m.Stop
 }

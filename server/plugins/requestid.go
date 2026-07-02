@@ -30,7 +30,7 @@ type requestIDMiddleware struct {
 	headerName string
 }
 
-func (m *requestIDMiddleware) Register(r *server.Router) {
+func (m *requestIDMiddleware) Register(r *server.API) {
 	r.Use(m.Middleware())
 }
 

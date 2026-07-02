@@ -62,7 +62,8 @@ func LoggerWithDefaults(cfg ...LoggerConfig) server.Middleware {
 		c.WithQuery = true
 		c.DurationMs = true
 		c.LogFunc = func(method, path, query string, status int, duration time.Duration, err error) {
-			slog.Info("request",
+			slog.Info(
+				"request",
 				"method", method,
 				"path", path,
 				"query", query,
@@ -80,7 +81,7 @@ type loggerMiddleware struct {
 	config LoggerConfig
 }
 
-func (m *loggerMiddleware) Register(r *server.Router) {
+func (m *loggerMiddleware) Register(r *server.API) {
 	r.Use(m.Middleware())
 }
 

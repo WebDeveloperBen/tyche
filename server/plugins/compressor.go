@@ -104,7 +104,7 @@ func CompressorWithDefaults() server.Middleware {
 	return Compressor(CompressorConfig{})
 }
 
-func (m *compressorMiddleware) Register(r *server.Router) {
+func (m *compressorMiddleware) Register(r *server.API) {
 	r.Use(m.Middleware())
 }
 

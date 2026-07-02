@@ -13,8 +13,8 @@ type user struct {
 	Name string `json:"name"`
 }
 
-func newRouter() *server.Router {
-	router := server.NewRouter()
+func newRouter() *server.API {
+	router := server.NewAPI(server.NewServeMuxAdapter())
 
 	router.POST("/users", func(w http.ResponseWriter, r *http.Request) error {
 		var in user

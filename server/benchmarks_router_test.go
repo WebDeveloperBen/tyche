@@ -218,9 +218,9 @@ func writeCompNestedOutputResponse(w http.ResponseWriter, out *compNestedOutput)
 	return err
 }
 
-func compBenchmarkRouter() *server.Router {
+func compBenchmarkRouter() *server.API {
 	compBenchmarkSetup()
-	r := server.NewRouter()
+	r := server.NewAPI(server.NewServeMuxAdapter())
 	g := r.Group("/comp")
 	server.Register(g, server.Operation{OperationID: "comp-static", Method: http.MethodGet, Path: "/static"}, func(c context.Context, i *compInput) (*compOutput, error) {
 		return &compOutput{ID: "1", Name: "Ben", Email: "ben@example.com", Age: 30}, nil

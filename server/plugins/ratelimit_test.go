@@ -15,7 +15,7 @@ import (
 
 func TestRateLimit(t *testing.T) {
 	t.Run("allows requests within limit", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		rl := plugins.RateLimit(plugins.RateLimitConfig{
 			RequestsPerSecond: 10,
 			Burst:             10,
@@ -39,7 +39,7 @@ func TestRateLimit(t *testing.T) {
 	})
 
 	t.Run("returns 429 when limit exceeded", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		rl := plugins.RateLimit(plugins.RateLimitConfig{
 			RequestsPerSecond: 1,
 			Burst:             1,
@@ -69,7 +69,7 @@ func TestRateLimit(t *testing.T) {
 	})
 
 	t.Run("token bucket refills over time", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		rl := plugins.RateLimit(plugins.RateLimitConfig{
 			RequestsPerSecond: 100,
 			Burst:             1,
@@ -109,7 +109,7 @@ func TestRateLimit(t *testing.T) {
 	})
 
 	t.Run("uses default values", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		rl := plugins.RateLimit()
 		r.Use(rl.Middleware())
 
@@ -130,7 +130,7 @@ func TestRateLimit(t *testing.T) {
 	})
 
 	t.Run("high burst allows burst of requests", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		rl := plugins.RateLimit(plugins.RateLimitConfig{
 			RequestsPerSecond: 1,
 			Burst:             100,
@@ -154,7 +154,7 @@ func TestRateLimit(t *testing.T) {
 	})
 
 	t.Run("error message is 'Too Many Requests'", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		rl := plugins.RateLimit(plugins.RateLimitConfig{
 			RequestsPerSecond: 1,
 			Burst:             0,
@@ -188,7 +188,7 @@ func TestRateLimit(t *testing.T) {
 
 func TestRateLimitConcurrency(t *testing.T) {
 	t.Run("concurrent requests are accurately counted", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		rl := plugins.RateLimit(plugins.RateLimitConfig{
 			RequestsPerSecond: 1,
 			Burst:             50,
@@ -232,7 +232,7 @@ func TestRateLimitConcurrency(t *testing.T) {
 	})
 
 	t.Run("concurrent requests no race conditions", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		rl := plugins.RateLimit(plugins.RateLimitConfig{
 			RequestsPerSecond: 100,
 			Burst:             1000,
@@ -258,7 +258,7 @@ func TestRateLimitConcurrency(t *testing.T) {
 	})
 
 	t.Run("stop stops the refill goroutine", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		rl := plugins.RateLimit(plugins.RateLimitConfig{
 			RequestsPerSecond: 1,
 			Burst:             1,
@@ -297,7 +297,7 @@ func TestRateLimitConcurrency(t *testing.T) {
 	})
 
 	t.Run("separate RateLimit calls have independent token buckets", func(t *testing.T) {
-		r := server.NewRouter()
+		r := server.NewAPI(server.NewServeMuxAdapter())
 		rl1 := plugins.RateLimit(plugins.RateLimitConfig{RequestsPerSecond: 1, Burst: 100})
 		rl2 := plugins.RateLimit(plugins.RateLimitConfig{RequestsPerSecond: 1, Burst: 5})
 
