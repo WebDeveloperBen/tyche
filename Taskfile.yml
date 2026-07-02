@@ -12,21 +12,120 @@ tasks:
     cmds:
       - lefthook install
 
+  # cmd/api is a local, gitignored dev harness for iterating on the library.
+  # This scaffolds a starter only when it's missing, so a fresh clone can
+  # `task dev` immediately without the harness ever being committed.
+  scaffold:
+    internal: true
+    status:
+      - test -f cmd/api/main.go
+    cmds:
+      - mkdir -p cmd/api/app
+      # Route types live in a NON-main package: reflect reports "main" as the
+      # PkgPath for types declared in package main, which would not match the
+      # import-path-based keys servergen generates, so typed routes in package
+      # main silently fail at runtime. Keeping them in ./app mirrors real usage.
+      - |
+        cat > cmd/api/app/app.go <<'GOEOF'
+        // Package app holds the dev harness's routes. It is a normal (non-main)
+        // package so servergen's generated codec keys match at runtime.
+        package app
+
+        import (
+        	"context"
+        	"net/http"
+
+        	"github.com/webdeveloperben/tyche/server"
+        )
+
+        type GreetInput struct {
+        	Name string `path:"name"`
+        }
+
+        type GreetOutput struct {
+        	Body struct {
+        		Message string `json:"message"`
+        	}
+        }
+
+        func greet(_ context.Context, in *GreetInput) (*GreetOutput, error) {
+        	out := &GreetOutput{}
+        	out.Body.Message = "hello, " + in.Name
+        	return out, nil
+        }
+
+        // Register wires the example routes onto g.
+        func Register(g *server.APIGroup) {
+        	server.Register(g, server.Operation{
+        		OperationID: "greet-user",
+        		Method:      http.MethodGet,
+        		Path:        "/greet/:name",
+        	}, greet)
+        }
+        GOEOF
+      - |
+        cat > cmd/api/main.go <<'GOEOF'
+        // Command api is a local, gitignored dev harness for iterating on tyche.
+        // Regenerate it any time with `task scaffold:force`.
+        package main
+
+        import (
+        	"log"
+
+        	"github.com/webdeveloperben/tyche/cmd/api/app"
+        	"github.com/webdeveloperben/tyche/server"
+        	"github.com/webdeveloperben/tyche/server/apidocs"
+        	"github.com/webdeveloperben/tyche/server/plugins"
+        )
+
+        func main() {
+        	api := server.NewAPI(server.NewServeMuxAdapter(), server.APIConfig{
+        		OpenAPI: server.OpenAPIInfo{Title: "tyche dev", Version: "0.0.0"},
+        	})
+        	api.Use(plugins.Recoverer(), plugins.RequestID())
+
+        	app.Register(api.Group("/api/v1"))
+
+        	docs := apidocs.Config{SpecPath: "/openapi.json"}
+        	docs.UIs = append(docs.UIs, apidocs.UIMount{Path: "/docs", Renderer: apidocs.Scalar()})
+        	if err := apidocs.Mount(api, docs); err != nil {
+        		log.Fatal(err)
+        	}
+
+        	log.Println("dev api on :8080 (docs: http://localhost:8080/docs)")
+        	if err := server.New(server.DefaultConfig(":8080"), api).Run(); err != nil {
+        		log.Fatal(err)
+        	}
+        }
+        GOEOF
+      - echo "scaffolded cmd/api (gitignored) — edit cmd/api/app/app.go to add routes"
+
+  scaffold:force:
+    desc: Overwrite the local dev harness with a fresh scaffold
+    cmds:
+      - rm -f cmd/api/main.go
+      - task: scaffold
+
   build:
-    desc: Build the API binary using generated codecs from a temporary worktree
+    desc: Regenerate codecs and build the dev API binary
+    deps: [scaffold]
     cmds:
       - mkdir -p "{{.TASK_DIR}}/bin"
-      - go run ./cmd/servergen build -o "{{.TASK_DIR}}/bin/api" ./cmd/api
+      - go run ./cmd/servergen generate ./...
+      - go build -o "{{.TASK_DIR}}/bin/api" ./cmd/api
 
   dev:
-    desc: Start dependencies and run the API with Air hot reload and generated codecs
+    desc: Hot-reload the dev API with Air (regenerates codecs on each build)
+    deps: [scaffold]
     cmds:
       - air -c .air.toml
 
   run:
-    desc: Run the built binary
+    desc: Regenerate codecs and run the dev API once
+    deps: [scaffold]
     cmds:
-      - ./bin/api
+      - go run ./cmd/servergen generate ./...
+      - go run ./cmd/api
 
   clean:
     desc: Remove local build and temporary worktree artefacts

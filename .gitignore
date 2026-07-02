@@ -3,3 +3,6 @@ bin/
 **/zz_server_routes_gen.go
 .gocache
 TODO.md
+
+# Local dev harness — scaffolded by `task dev` (see Taskfile), never committed.
+cmd/api/
