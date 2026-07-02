@@ -28,8 +28,41 @@ type RouteSpec struct {
 	Path             string
 	InputType        string
 	OutputType       string
-	InputBind        InputBindSpec
-	OutputWrite      OutputWriteSpec
+	// InputTypeKey / OutputTypeKey are the runtime identity keys the codec
+	// registers under. They must equal server.GeneratedTypeKey(reflect type)
+	// at runtime: the type's package import path + "." + name, except that
+	// main-package types use "main" (Go's runtime reports "main" as their
+	// reflect PkgPath, not the import path).
+	InputTypeKey  string
+	OutputTypeKey string
+	InputBind     InputBindSpec
+	OutputWrite   OutputWriteSpec
+}
+
+// generatedTypeKey computes the runtime identity key for a route input/output
+// type, matching server.GeneratedTypeKey: "<pkgpath>.<Name>", with the import
+// path replaced by "main" for types declared in a main package (which is what
+// reflect reports for them at runtime). Using the type's own package also makes
+// keys correct when a route's types live in a different package than the
+// Register call.
+func generatedTypeKey(t types.Type) string {
+	if ptr, ok := t.(*types.Pointer); ok {
+		t = ptr.Elem()
+	}
+	named, ok := t.(*types.Named)
+	if !ok {
+		return types.TypeString(t, nil)
+	}
+	obj := named.Obj()
+	pkg := obj.Pkg()
+	if pkg == nil {
+		return obj.Name()
+	}
+	path := pkg.Path()
+	if pkg.Name() == "main" {
+		path = "main"
+	}
+	return path + "." + obj.Name()
 }
 
 type BindFieldSpec struct {
@@ -293,17 +326,6 @@ func loadPackageRoutes(pkg *packages.Package) ([]RouteSpec, error) {
 			return true
 		})
 	}
-	// Typed routes registered in package main cannot use generated codecs: Go's
-	// runtime reports "main" as the reflect PkgPath for main-package types,
-	// while servergen keys codecs by the full import path, so the two never
-	// match and Register would panic at runtime. Fail loudly at generate time
-	// with an actionable message instead.
-	if len(routes) > 0 && pkg.Name == "main" {
-		return nil, fmt.Errorf(
-			"package main (%s) registers typed routes (e.g. %s %s): move the route registrations and their input/output types into a non-main package — Go reports \"main\" as the reflect PkgPath for main-package types, so a generated codec's type keys can never match and Register fails at runtime",
-			pkg.PkgPath, routes[0].Method, routes[0].Path,
-		)
-	}
 	return routes, nil
 }
 
@@ -365,6 +387,8 @@ func routeSpecFromCall(pkg *packages.Package, call *ast.CallExpr, serverImportPa
 
 	spec.InputType = types.TypeString(inputPtr.Elem(), qualifierFor(pkg.Types))
 	spec.OutputType = types.TypeString(outputPtr.Elem(), qualifierFor(pkg.Types))
+	spec.InputTypeKey = generatedTypeKey(inputPtr.Elem())
+	spec.OutputTypeKey = generatedTypeKey(outputPtr.Elem())
 	spec.InputBind = analyseInputType(inputPtr.Elem())
 	spec.OutputWrite = analyseOutputType(outputPtr.Elem())
 
@@ -482,8 +506,8 @@ func GeneratePackageManifest(pkgPath string, routes []RouteSpec) ([]byte, error)
 		buf.WriteString("\t\t\tPath: " + strconv.Quote(route.Path) + ",\n")
 		buf.WriteString("\t\t\tInputType: " + strconv.Quote(route.InputType) + ",\n")
 		buf.WriteString("\t\t\tOutputType: " + strconv.Quote(route.OutputType) + ",\n")
-		buf.WriteString("\t\t\tInputTypeKey: " + strconv.Quote(route.PackagePath+"."+route.InputType) + ",\n")
-		buf.WriteString("\t\t\tOutputTypeKey: " + strconv.Quote(route.PackagePath+"."+route.OutputType) + ",\n")
+		buf.WriteString("\t\t\tInputTypeKey: " + strconv.Quote(route.InputTypeKey) + ",\n")
+		buf.WriteString("\t\t\tOutputTypeKey: " + strconv.Quote(route.OutputTypeKey) + ",\n")
 		buf.WriteString("\t\t\tHasGeneratedCodec: " + strconv.FormatBool(hasGeneratedCodec) + ",\n")
 		buf.WriteString("\t\t},\n")
 	}
@@ -499,8 +523,8 @@ func GeneratePackageManifest(pkgPath string, routes []RouteSpec) ([]byte, error)
 		buf.WriteString("\t\tPath: " + strconv.Quote(route.Path) + ",\n")
 		buf.WriteString("\t\tInputType: " + strconv.Quote(route.InputType) + ",\n")
 		buf.WriteString("\t\tOutputType: " + strconv.Quote(route.OutputType) + ",\n")
-		buf.WriteString("\t\tInputTypeKey: " + strconv.Quote(route.PackagePath+"."+route.InputType) + ",\n")
-		buf.WriteString("\t\tOutputTypeKey: " + strconv.Quote(route.PackagePath+"."+route.OutputType) + ",\n")
+		buf.WriteString("\t\tInputTypeKey: " + strconv.Quote(route.InputTypeKey) + ",\n")
+		buf.WriteString("\t\tOutputTypeKey: " + strconv.Quote(route.OutputTypeKey) + ",\n")
 		buf.WriteString("\t\tHasGeneratedCodec: true,\n")
 		buf.WriteString("\t}, serverpkg.GeneratedRouteCodec{\n")
 		buf.WriteString("\t\tParse: func(req *http.Request) (any, error) {\n")

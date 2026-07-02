@@ -103,13 +103,30 @@ func TestLoadRoutes(t *testing.T) {
 	}
 }
 
-func TestLoadRoutes_RejectsMainPackageRoutes(t *testing.T) {
-	_, err := servergen.LoadRoutes([]string{"./testdata/mainpkg"})
-	if err == nil {
-		t.Fatal("expected an error for typed routes registered in package main")
+func TestGeneratePackageManifest_MainPackageKeys(t *testing.T) {
+	// Typed routes in package main are supported: the generated codec keys must
+	// use "main" (what reflect reports at runtime), not the import path, so they
+	// match at runtime. This is what makes single-file main.go apps work.
+	routes, err := servergen.LoadRoutes([]string{"./testdata/mainpkg"})
+	if err != nil {
+		t.Fatalf("LoadRoutes(mainpkg) should succeed, got: %v", err)
 	}
-	if !strings.Contains(err.Error(), "package main") {
-		t.Fatalf("expected an actionable package main error, got: %v", err)
+	if len(routes) == 0 {
+		t.Fatal("expected routes from mainpkg")
+	}
+
+	content, err := servergen.GeneratePackageManifest(routes[0].PackagePath, routes)
+	if err != nil {
+		t.Fatalf("GeneratePackageManifest failed: %v", err)
+	}
+	text := string(content)
+	for _, want := range []string{
+		`InputTypeKey: "main.Input"`,
+		`OutputTypeKey: "main.Output"`,
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("expected main-package key %q in generated output:\n%s", want, text)
+		}
 	}
 }
 

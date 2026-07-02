@@ -20,22 +20,24 @@ tasks:
     status:
       - test -f cmd/api/main.go
     cmds:
-      - mkdir -p cmd/api/app
-      # Route types live in a NON-main package: reflect reports "main" as the
-      # PkgPath for types declared in package main, which would not match the
-      # import-path-based keys servergen generates, so typed routes in package
-      # main silently fail at runtime. Keeping them in ./app mirrors real usage.
+      - mkdir -p cmd/api
+      # A single-file main.go: types, routes, and main() all in package main.
+      # servergen keys main-package codecs under "main" (matching runtime
+      # reflect), so this works end to end.
       - |
-        cat > cmd/api/app/app.go <<'GOEOF'
-        // Package app holds the dev harness's routes. It is a normal (non-main)
-        // package so servergen's generated codec keys match at runtime.
-        package app
+        cat > cmd/api/main.go <<'GOEOF'
+        // Command api is a local, gitignored dev harness for iterating on tyche.
+        // Regenerate it any time with `task scaffold:force`.
+        package main
 
         import (
         	"context"
+        	"log"
         	"net/http"
 
         	"github.com/webdeveloperben/tyche/server"
+        	"github.com/webdeveloperben/tyche/server/apidocs"
+        	"github.com/webdeveloperben/tyche/server/plugins"
         )
 
         type GreetInput struct {
@@ -54,37 +56,17 @@ tasks:
         	return out, nil
         }
 
-        // Register wires the example routes onto g.
-        func Register(g *server.APIGroup) {
-        	server.Register(g, server.Operation{
-        		OperationID: "greet-user",
-        		Method:      http.MethodGet,
-        		Path:        "/greet/:name",
-        	}, greet)
-        }
-        GOEOF
-      - |
-        cat > cmd/api/main.go <<'GOEOF'
-        // Command api is a local, gitignored dev harness for iterating on tyche.
-        // Regenerate it any time with `task scaffold:force`.
-        package main
-
-        import (
-        	"log"
-
-        	"github.com/webdeveloperben/tyche/cmd/api/app"
-        	"github.com/webdeveloperben/tyche/server"
-        	"github.com/webdeveloperben/tyche/server/apidocs"
-        	"github.com/webdeveloperben/tyche/server/plugins"
-        )
-
         func main() {
         	api := server.NewAPI(server.NewServeMuxAdapter(), server.APIConfig{
         		OpenAPI: server.OpenAPIInfo{Title: "tyche dev", Version: "0.0.0"},
         	})
         	api.Use(plugins.Recoverer(), plugins.RequestID())
 
-        	app.Register(api.Group("/api/v1"))
+        	server.Register(api.Group("/api/v1"), server.Operation{
+        		OperationID: "greet-user",
+        		Method:      http.MethodGet,
+        		Path:        "/greet/:name",
+        	}, greet)
 
         	docs := apidocs.Config{SpecPath: "/openapi.json"}
         	docs.UIs = append(docs.UIs, apidocs.UIMount{Path: "/docs", Renderer: apidocs.Scalar()})
@@ -98,7 +80,7 @@ tasks:
         	}
         }
         GOEOF
-      - echo "scaffolded cmd/api (gitignored) — edit cmd/api/app/app.go to add routes"
+      - echo "scaffolded cmd/api/main.go (gitignored) — edit it freely"
 
   scaffold:force:
     desc: Overwrite the local dev harness with a fresh scaffold

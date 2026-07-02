@@ -1,6 +1,7 @@
-// Package main is a fixture: a main package that (incorrectly) registers a
-// typed route with its input/output types declared in package main. servergen
-// must reject this at generate time. It is never built or run — only analysed.
+// Package main is a fixture: a single-file main package that registers a typed
+// route with its input/output types declared in package main. servergen must
+// key the codec under "main" (matching what reflect reports at runtime) so it
+// works end to end. It is never built or run — only analysed by servergen tests.
 package main
 
 import (
