@@ -129,29 +129,6 @@ func routeLabel(r *http.Request) string {
 	return r.URL.Path
 }
 
-// InstrumentPlugin is the [server] plugin form of [Instrument], usable with a
-// plugin registry.
-type InstrumentPlugin struct {
-	Observer RequestObserver
-}
-
-// Register installs the instrumentation middleware on the router.
-func (p InstrumentPlugin) Register(r *server.API) error {
-	r.Use(Instrument(p.Observer))
-	return nil
-}
-
-// InstrumentHTTPPlugin is the [server] plugin form of [InstrumentHTTP].
-type InstrumentHTTPPlugin struct {
-	Observer RequestObserver
-}
-
-// Register installs the http.Handler-level instrumentation on the router.
-func (p InstrumentHTTPPlugin) Register(r *server.API) error {
-	r.UseHTTP(InstrumentHTTP(p.Observer))
-	return nil
-}
-
 // meteredWriter records the status code and number of body bytes written while
 // transparently forwarding the optional ResponseWriter interfaces.
 type meteredWriter struct {

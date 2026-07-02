@@ -13,29 +13,23 @@ type RateLimitConfig struct {
 	Burst             int
 }
 
-type RateLimitMiddleware interface {
-	Middleware() server.Middleware
-	Register(r *server.API) func()
-	Stop()
-}
-
-func RateLimit(cfg ...RateLimitConfig) *rateLimitMiddleware {
+func RateLimit(cfg ...RateLimitConfig) *RateLimiter {
 	c := RateLimitConfig{RequestsPerSecond: 100, Burst: 200}
 	if len(cfg) > 0 {
 		c = cfg[0]
 	}
-	return newRateLimitMiddleware(c.RequestsPerSecond, c.Burst)
+	return newRateLimiter(c.RequestsPerSecond, c.Burst)
 }
 
-func RateLimitWithDefaults() *rateLimitMiddleware {
-	return newRateLimitMiddleware(100, 200)
+func RateLimitWithDefaults() *RateLimiter {
+	return newRateLimiter(100, 200)
 }
 
-func newRateLimitMiddleware(requestsPerSecond, burst int) *rateLimitMiddleware {
+func newRateLimiter(requestsPerSecond, burst int) *RateLimiter {
 	if burst < 0 {
 		burst = 0
 	}
-	m := &rateLimitMiddleware{
+	m := &RateLimiter{
 		requestsPerSecond: requestsPerSecond,
 		burst:             burst,
 		tokens:            int64(burst),
@@ -48,7 +42,9 @@ func newRateLimitMiddleware(requestsPerSecond, burst int) *rateLimitMiddleware {
 	return m
 }
 
-type rateLimitMiddleware struct {
+// RateLimiter is a token-bucket rate limiter. Apply it as middleware with
+// api.Use(rl.Middleware()) and call Stop when done to end its refill goroutine.
+type RateLimiter struct {
 	requestsPerSecond int
 	burst             int
 	maxTokens         int64
@@ -57,7 +53,7 @@ type rateLimitMiddleware struct {
 	stopped           atomic.Bool
 }
 
-func (m *rateLimitMiddleware) refill() {
+func (m *RateLimiter) refill() {
 	interval := max(time.Second/time.Duration(m.requestsPerSecond), 10*time.Millisecond)
 
 	ticker := time.NewTicker(interval)
@@ -80,19 +76,14 @@ func (m *rateLimitMiddleware) refill() {
 	}
 }
 
-func (m *rateLimitMiddleware) Stop() {
+func (m *RateLimiter) Stop() {
 	if m.stopped.Swap(true) {
 		return
 	}
 	close(m.closed)
 }
 
-func (m *rateLimitMiddleware) Register(r *server.API) func() {
-	r.Use(m.Middleware())
-	return m.Stop
-}
-
-func (m *rateLimitMiddleware) Middleware() server.Middleware {
+func (m *RateLimiter) Middleware() server.Middleware {
 	return func(next server.HandlerFunc) server.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) error {
 			for {

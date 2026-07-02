@@ -143,10 +143,6 @@ func CORSWithDefaults() server.ServeHTTPMiddleware {
 	return mw
 }
 
-func (m *corsMiddleware) Register(r *server.API) {
-	r.UseServeHTTP(m.Middleware())
-}
-
 func (m *corsMiddleware) Middleware() server.ServeHTTPMiddleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

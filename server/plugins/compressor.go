@@ -104,10 +104,6 @@ func CompressorWithDefaults() server.Middleware {
 	return Compressor(CompressorConfig{})
 }
 
-func (m *compressorMiddleware) Register(r *server.API) {
-	r.Use(m.Middleware())
-}
-
 func (m *compressorMiddleware) Middleware() server.Middleware {
 	return func(next server.HandlerFunc) server.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) error {

@@ -263,7 +263,8 @@ func TestRateLimitConcurrency(t *testing.T) {
 			RequestsPerSecond: 1,
 			Burst:             1,
 		})
-		stop := rl.Register(r)
+		r.Use(rl.Middleware())
+		stop := rl.Stop
 
 		r.GET("/test", func(w http.ResponseWriter, r *http.Request) error {
 			w.WriteHeader(http.StatusOK)

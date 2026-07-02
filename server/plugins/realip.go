@@ -56,10 +56,6 @@ type realIPMiddleware struct {
 	trustedCIDRs []*net.IPNet
 }
 
-func (m *realIPMiddleware) Register(r *server.API) {
-	r.Use(m.Middleware())
-}
-
 func (m *realIPMiddleware) Middleware() server.Middleware {
 	return func(next server.HandlerFunc) server.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) error {

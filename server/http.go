@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/webdeveloperben/tyche/server/validation"
@@ -152,6 +153,35 @@ func validateRoutePattern(pattern string) error {
 		}
 	}
 	return nil
+}
+
+// wildcardParamName is the parameter name used for an unnamed trailing wildcard
+// ("*"). It is shared by the OpenAPI path renderer and the ServeMux adapter so
+// the two never disagree on what to call it.
+const wildcardParamName = "wildcard"
+
+// rewriteSegments rebuilds a route path, replacing each ":name" and "*name"
+// segment via param and wildcard (which receive the segment name — "" for an
+// unnamed wildcard) and copying literal segments unchanged. The caller is
+// responsible for the leading-slash guard; a path with no params should skip
+// this. It is the single place tyche's route-template syntax is parsed.
+func rewriteSegments(path string, param, wildcard func(name string) string) string {
+	var b strings.Builder
+	for _, part := range SplitRouteFast(path) {
+		b.WriteByte('/')
+		switch {
+		case len(part) > 0 && part[0] == ':':
+			b.WriteString(param(part[1:]))
+		case len(part) > 0 && part[0] == '*':
+			b.WriteString(wildcard(part[1:]))
+		default:
+			b.WriteString(part)
+		}
+	}
+	if b.Len() == 0 {
+		return "/"
+	}
+	return b.String()
 }
 
 func joinPath(prefix, pattern string) string {

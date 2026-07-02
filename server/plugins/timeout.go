@@ -33,10 +33,6 @@ type timeoutMiddleware struct {
 	handlerTimeout time.Duration
 }
 
-func (m *timeoutMiddleware) Register(r *server.API) {
-	r.Use(m.Middleware())
-}
-
 type timeoutResponseWriter struct {
 	http.ResponseWriter
 	wroteHeader bool

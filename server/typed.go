@@ -1115,38 +1115,19 @@ func isZeroValue(v reflect.Value) bool {
 }
 
 func ServerPathToOpenAPIPath(path string) string {
-	if path == "" || (!strings.Contains(path, ":") && !strings.Contains(path, "*")) {
+	if path == "" || !strings.ContainsAny(path, ":*") {
 		return path
 	}
-	parts := SplitRouteFast(path)
-	if len(parts) == 0 {
-		return path
-	}
-	var b strings.Builder
-	for _, part := range parts {
-		b.WriteByte('/')
-		if len(part) > 0 && part[0] == ':' {
-			b.WriteByte('{')
-			b.WriteString(part[1:])
-			b.WriteByte('}')
-			continue
-		}
-		if len(part) > 0 && part[0] == '*' {
-			name := part[1:]
+	return rewriteSegments(
+		path,
+		func(name string) string { return "{" + name + "}" },
+		func(name string) string {
 			if name == "" {
-				name = "wildcard"
+				name = wildcardParamName
 			}
-			b.WriteByte('{')
-			b.WriteString(name)
-			b.WriteByte('}')
-			continue
-		}
-		b.WriteString(part)
-	}
-	if b.Len() == 0 {
-		return "/"
-	}
-	return b.String()
+			return "{" + name + "}"
+		},
+	)
 }
 
 func sanitizeOperationID(path string) string {

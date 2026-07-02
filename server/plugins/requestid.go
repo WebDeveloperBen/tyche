@@ -30,10 +30,6 @@ type requestIDMiddleware struct {
 	headerName string
 }
 
-func (m *requestIDMiddleware) Register(r *server.API) {
-	r.Use(m.Middleware())
-}
-
 func (m *requestIDMiddleware) Middleware() server.Middleware {
 	header := m.headerName
 	return func(next server.HandlerFunc) server.HandlerFunc {

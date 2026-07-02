@@ -81,10 +81,6 @@ type loggerMiddleware struct {
 	config LoggerConfig
 }
 
-func (m *loggerMiddleware) Register(r *server.API) {
-	r.Use(m.Middleware())
-}
-
 func (m *loggerMiddleware) Middleware() server.Middleware {
 	maxBodySize := m.config.MaxBodySize
 	if maxBodySize <= 0 {

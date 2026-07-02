@@ -170,40 +170,23 @@ func (f *fallbackInterceptor) Written() bool {
 	return f.status != 0
 }
 
-// stdlibWildcardName is the ServeMux capture name used for an unnamed trailing
-// wildcard ("*"). It must be a valid Go identifier (ServeMux requires one), so
-// it cannot be "*"; matchWrap mirrors it back onto PathValue("*").
-const stdlibWildcardName = "rest"
-
-// toStdlibPattern converts "/things/:id/*rest" to "/things/{id}/{rest...}".
+// toStdlibPattern converts "/things/:id/*rest" to "/things/{id}/{rest...}". An
+// unnamed wildcard ("*") is captured under wildcardParamName (ServeMux requires
+// a valid identifier, so it cannot be "*"); matchWrap mirrors it onto "*".
 func toStdlibPattern(path string) string {
 	if !strings.ContainsAny(path, ":*") {
 		return path
 	}
-	var b strings.Builder
-	for _, part := range SplitRouteFast(path) {
-		b.WriteByte('/')
-		switch {
-		case len(part) > 0 && part[0] == ':':
-			b.WriteByte('{')
-			b.WriteString(part[1:])
-			b.WriteByte('}')
-		case len(part) > 0 && part[0] == '*':
-			name := part[1:]
+	return rewriteSegments(
+		path,
+		func(name string) string { return "{" + name + "}" },
+		func(name string) string {
 			if name == "" {
-				name = stdlibWildcardName
+				name = wildcardParamName
 			}
-			b.WriteByte('{')
-			b.WriteString(name)
-			b.WriteString("...}")
-		default:
-			b.WriteString(part)
-		}
-	}
-	if b.Len() == 0 {
-		return "/"
-	}
-	return b.String()
+			return "{" + name + "...}"
+		},
+	)
 }
 
 // trailingWildcardName returns the ServeMux capture name of a trailing "*"
@@ -218,7 +201,7 @@ func trailingWildcardName(path string) string {
 		return ""
 	}
 	if len(last) == 1 {
-		return stdlibWildcardName
+		return wildcardParamName
 	}
 	return last[1:]
 }
