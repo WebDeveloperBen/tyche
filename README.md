@@ -1,13 +1,15 @@
 # tyche
 
-Typed Go HTTP handlers that generate their own OpenAPI spec and zero-reflection
-request/response codecs — running over **any router you bring**.
+Typed Go HTTP handlers that generate their own OpenAPI spec — running over
+**any router you bring**, with optional zero-reflection request/response codecs.
 
 You write a handler as `func(ctx, *In) (*Out, error)`. tyche derives the OpenAPI
-operation from the types, and `servergen` generates the binding, validation, and
-serialization code ahead of time (like `sqlc`, but for HTTP I/O). Routing itself
-is delegated to a pluggable `Adapter` — the standard library `net/http.ServeMux`
-by default, or chi/gin/anything you wire up.
+operation from the types and binds/validates/serializes via reflection, so it
+runs with no build step. Optionally, `servergen` generates that binding,
+validation, and serialization code ahead of time for a reflection-free fast path
+(like `sqlc`, but for HTTP I/O). Routing is delegated to a pluggable `Adapter` —
+the standard library `net/http.ServeMux` by default, or chi/gin/anything you
+wire up.
 
 ## Design in one paragraph
 
@@ -74,11 +76,13 @@ func main() {
 }
 ```
 
-Typed routes require generated codecs. Run the generator (or use the `servergen`
-run/build wrappers, which regenerate first):
+This runs as-is — no build step. Typed routes bind, validate, and serialize via
+reflection out of the box, so `go run` just works. Running `servergen` generates
+zero-reflection codecs that replace the reflection path for a speed-up; it is an
+optimization, not a requirement:
 
 ```sh
-servergen generate ./...
+servergen generate ./...   # optional: emit zero-reflection codecs
 ```
 
 ## The adapter model
@@ -147,14 +151,22 @@ Register a handler as `func(ctx, *In) (*Out, error)`. Input fields are bound fro
 `path`, `query`, `header`, and `cookie` tags plus a JSON body (`Body` field or a
 `body` tag); output fields map to a JSON body, response headers, and status.
 
-`servergen` inspects each `server.Register(...)` call at build time and emits a
-codec (`zz_server_routes_gen.go`) that does the binding, validation, and
-serialization with hand-written byte-level code and no runtime reflection —
-conceptually the same trade `sqlc` makes for SQL. The generated codec is
-registered in an `init()` and picked up automatically at registration.
+By default this runs through a reflection binder — no codegen step, so iterating
+with `go run` is friction-free. `servergen` then inspects each
+`server.Register(...)` call and emits a codec (`zz_server_routes_gen.go`) that
+does the binding, validation, and serialization with hand-written byte-level
+code and **no runtime reflection** — conceptually the same trade `sqlc` makes for
+SQL. The generated codec is registered in an `init()` and picked up
+automatically; when present it replaces the reflection path for that route. Both
+paths produce byte-identical responses, so codegen is a pure performance
+optimization you reach for in production, not a prerequisite.
 
 Successful responses are wrapped in a `{"data": …}` envelope; errors are RFC
 9457 `application/problem+json`.
+
+Route input/output types may live anywhere, including a single-file `package
+main` — servergen keys main-package codecs to match Go's runtime reflection, so
+the small everything-in-`main.go` app works end to end.
 
 ## Middleware
 
