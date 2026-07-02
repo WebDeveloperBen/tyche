@@ -20,23 +20,18 @@ const GeneratedFilename = "zz_server_routes_gen.go"
 
 type RouteSpec struct {
 	PackageName      string
-	PackagePath      string
-	Dir              string
+	Path             string
 	ServerImportPath string
 	OperationID      string
 	Method           string
-	Path             string
 	InputType        string
 	OutputType       string
-	// InputTypeKey / OutputTypeKey are the runtime identity keys the codec
-	// registers under. They must equal server.GeneratedTypeKey(reflect type)
-	// at runtime: the type's package import path + "." + name, except that
-	// main-package types use "main" (Go's runtime reports "main" as their
-	// reflect PkgPath, not the import path).
-	InputTypeKey  string
-	OutputTypeKey string
-	InputBind     InputBindSpec
-	OutputWrite   OutputWriteSpec
+	InputTypeKey     string
+	OutputTypeKey    string
+	Dir              string
+	PackagePath      string
+	InputBind        InputBindSpec
+	OutputWrite      OutputWriteSpec
 }
 
 // generatedTypeKey computes the runtime identity key for a route input/output
@@ -71,44 +66,44 @@ type BindFieldSpec struct {
 	Source    string
 	TypeExpr  string
 	Kind      string
+	Rules     validation.FieldRules
 	Pointer   bool
 	Required  bool
-	Rules     validation.FieldRules
 }
 
 type InputBindSpec struct {
-	Manual bool
-	Fields []BindFieldSpec
 	Body   *BodyBindSpec
+	Fields []BindFieldSpec
+	Manual bool
 }
 
 type BodyFieldSpec struct {
-	FieldName     string
+	ElemNested    *BodyBindSpec
+	Nested        *BodyBindSpec
+	NestedType    string
 	JSONName      string
 	TypeExpr      string
 	Kind          string
-	Pointer       bool
-	Slice         bool
-	Opaque        bool
-	Required      bool
-	Rules         validation.FieldRules
-	Nested        *BodyBindSpec
-	NestedType    string
-	NestedPtr     bool
-	ElemType      string
-	ElemKind      string
-	ElemPtr       bool
-	ElemNested    *BodyBindSpec
 	ElemStruct    string
+	ElemKind      string
+	ElemType      string
+	FieldName     string
+	Rules         validation.FieldRules
+	NestedPtr     bool
+	Required      bool
+	Opaque        bool
+	ElemPtr       bool
+	Slice         bool
+	Pointer       bool
 	ElemStructPtr bool
 }
 
 type BodyBindSpec struct {
-	Required     bool
+	Direct       *BodyFieldSpec
 	Target       string
 	DecodeTarget string
 	Fields       []BodyFieldSpec
-	Direct       *BodyFieldSpec
+	Required     bool
 }
 
 type HeaderFieldSpec struct {
@@ -135,13 +130,13 @@ type OutputBodySpec struct {
 }
 
 type OutputWriteSpec struct {
-	Manual        bool
+	Body          *OutputBodySpec
 	BodyFieldName string
 	BodyTypeExpr  string
 	StatusField   string
-	StaticStatus  int
 	Headers       []HeaderFieldSpec
-	Body          *OutputBodySpec
+	StaticStatus  int
+	Manual        bool
 }
 
 func LoadRoutes(patterns []string) ([]RouteSpec, error) {

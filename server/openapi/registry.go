@@ -10,10 +10,10 @@ import (
 )
 
 type Registry struct {
-	mu       sync.RWMutex
 	schemas  map[reflect.Type]*Schema
 	building map[reflect.Type]bool
 	prefix   string
+	mu       sync.RWMutex
 }
 
 func indirectType(t reflect.Type) reflect.Type {

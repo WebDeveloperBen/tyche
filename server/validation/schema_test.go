@@ -12,9 +12,9 @@ import (
 // field's type (integer -> [1,2,3], not ["1","2","3"]).
 func TestConstraintsForField_EnumTyping(t *testing.T) {
 	type S struct {
+		Kind     string  `validate:"oneof=a b"`
 		Priority int     `validate:"oneof=1 2 3"`
 		Ratio    float64 `validate:"oneof=1.5 2.5"`
-		Kind     string  `validate:"oneof=a b"`
 	}
 
 	field := func(name string) reflect.StructField {

@@ -13,23 +13,13 @@ import (
 // RequestInfo is the set of metrics captured for a single handled request. It
 // is passed to a [RequestObserver] after the handler completes.
 type RequestInfo struct {
-	// Method is the HTTP method.
-	Method string
-	// Route is the matched route template (e.g. "/users/:id"), suitable as a
-	// low-cardinality metric label. It falls back to the request path when no
-	// template is available.
-	Route string
-	// Path is the concrete request path.
-	Path string
-	// Status is the HTTP status code written by the handler (defaults to 200
-	// when the handler writes a body without an explicit status).
-	Status int
-	// Bytes is the number of response body bytes written.
-	Bytes int64
-	// Duration is the wall-clock time spent in the handler chain.
+	Err      error
+	Method   string
+	Route    string
+	Path     string
+	Status   int
+	Bytes    int64
 	Duration time.Duration
-	// Err is the error returned by the handler, if any.
-	Err error
 }
 
 // RequestObserver receives a [RequestInfo] for every handled request. It is the

@@ -20,16 +20,16 @@ func (f inputField) isSlice() bool { return strings.HasPrefix(f.GoType, "[]") }
 
 // operation is a fully resolved operation ready for emission.
 type operation struct {
-	Method     string // HTTP method
+	Method     string
 	HTTPPath   string
 	GoName     string
 	InputName  string
-	Fields     []inputField
-	OutputType string // "" when the operation has no response body
-	Stream     bool   // true for text/event-stream operations
-	EventType  string // event data type when Stream is true
-	Bytes      bool   // true when the success body is a non-JSON media type
+	OutputType string
+	EventType  string
 	Summary    string
+	Fields     []inputField
+	Stream     bool
+	Bytes      bool
 	Deprecated bool
 }
 

@@ -36,11 +36,11 @@ type createUserOutput struct {
 }
 
 type wrappedCreateUserOutput struct {
-	Status int    `status:"201"`
-	Trace  string `header:"X-Trace-ID" doc:"Trace identifier"`
-	Body   struct {
+	Trace string `header:"X-Trace-ID" doc:"Trace identifier"`
+	Body  struct {
 		ID string `json:"id"`
 	} `body:"true"`
+	Status int `status:"201"`
 }
 
 type sharedStatusOutput struct {
@@ -747,8 +747,8 @@ func TestRegister_HeadResponseHasNoBody(t *testing.T) {
 
 func TestRegister_NoBodyStatusDocsAndRuntime(t *testing.T) {
 	type noBodyOutput struct {
-		Status int      `status:"204"`
 		Body   struct{} `body:"true"`
+		Status int      `status:"204"`
 	}
 
 	router := server.NewAPI(server.NewServeMuxAdapter())

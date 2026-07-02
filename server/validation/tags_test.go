@@ -83,16 +83,16 @@ func TestHasTagOption(t *testing.T) {
 
 func TestFieldRequired(t *testing.T) {
 	type S struct {
+		QueryOpt  *string `query:"page"`
+		JSONOpt   *string `json:"bio"`
+		ExplTrue  *string `json:"et" required:"true"`
 		PathID    string  `path:"id"`
 		QueryReq  string  `query:"q" required:"true"`
-		QueryOpt  *string `query:"page"`
 		QueryOmit string  `query:"limit,omitempty"`
 		JSONReq   string  `json:"name"`
-		JSONOpt   *string `json:"bio"`
 		JSONOmit  string  `json:"role,omitempty"`
 		ValidOmit string  `json:"tag" validate:"omitempty"`
 		ExplFalse string  `json:"ef" required:"false"`
-		ExplTrue  *string `json:"et" required:"true"` // pointer but explicitly required
 	}
 	typ := reflect.TypeFor[S]()
 
@@ -131,14 +131,14 @@ func TestFieldRequiredFromTag(t *testing.T) {
 	ptrType := reflect.TypeFor[*string]()
 
 	tests := []struct {
-		tag  string
 		typ  reflect.Type
+		tag  string
 		want bool
 	}{
-		{"name", strType, true},            // non-pointer, no omitempty
-		{"name,omitempty", strType, false}, // omitempty present
-		{"name", ptrType, false},           // pointer type
-		{"", strType, true},                // no tag, non-pointer
+		{tag: "name", typ: strType, want: true},            // non-pointer, no omitempty
+		{tag: "name,omitempty", typ: strType, want: false}, // omitempty present
+		{tag: "name", typ: ptrType, want: false},           // pointer type
+		{tag: "", typ: strType, want: true},                // no tag, non-pointer
 	}
 	for _, tt := range tests {
 		got := validation.FieldRequiredFromTag(tt.tag, tt.typ)

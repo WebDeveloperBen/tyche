@@ -39,24 +39,22 @@ type RouteTarget interface {
 // RegisterStream can register directly on it (at the root prefix) or on any
 // [APIGroup] it produces.
 type API struct {
+	dispatch             http.Handler
 	adapter              Adapter
-	errorHandler         ErrorHandler
 	notFound             http.Handler
 	methodNotAllowed     http.Handler
-	doc                  *openapi.OpenAPI
+	registered           map[string]struct{}
 	schemaRegistry       *openapi.Registry
+	doc                  *openapi.OpenAPI
+	root                 *APIGroup
+	errorHandler         ErrorHandler
 	operations           []RegisteredOperation
 	rootMW               []Middleware
 	serveHTTPMiddlewares []ServeHTTPMiddleware
-	dispatch             http.Handler
+	routes               []*apiRoute
+	openapiJSON          []byte
 	maxBodyBytes         int64
-
-	root       *APIGroup
-	registered map[string]struct{}
-	routes     []*apiRoute
-
-	openapiMu   sync.RWMutex
-	openapiJSON []byte
+	openapiMu            sync.RWMutex
 }
 
 // apiRoute is a registered route. Its composed (middleware-wrapped) handler is
@@ -66,10 +64,10 @@ type API struct {
 type apiRoute struct {
 	group    *APIGroup
 	fn       HandlerFunc
+	wrapped  atomic.Pointer[HandlerFunc]
+	template string
 	routeMW  []Middleware
 	limit    int64
-	template string
-	wrapped  atomic.Pointer[HandlerFunc]
 }
 
 // NewAPI builds an API over the given adapter. Config is optional; the zero

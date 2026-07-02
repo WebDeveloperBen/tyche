@@ -17,8 +17,8 @@ type PageOptions struct {
 }
 
 type UIMount struct {
-	Path     string
 	Renderer Renderer
+	Path     string
 }
 
 type Config struct {

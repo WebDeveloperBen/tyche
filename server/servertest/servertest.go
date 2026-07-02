@@ -175,12 +175,11 @@ func Decode[T any](tb testing.TB, r *Response) T {
 
 // Problem is the RFC 9457 problem+json shape that tyche emits for errors.
 type Problem struct {
-	Type   string `json:"type"`
-	Title  string `json:"title"`
-	Status int    `json:"status"`
-	Detail string `json:"detail"`
-	// Errors carries validation problem details when present.
+	Type   string              `json:"type"`
+	Title  string              `json:"title"`
+	Detail string              `json:"detail"`
 	Errors []ValidationProblem `json:"errors"`
+	Status int                 `json:"status"`
 }
 
 // ValidationProblem is a single field-level validation error.

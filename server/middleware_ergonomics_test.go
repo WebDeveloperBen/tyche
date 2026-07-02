@@ -72,8 +72,8 @@ func TestChain_Order(t *testing.T) {
 }
 
 type namedMW struct {
-	name  string
 	order *[]string
+	name  string
 }
 
 func (n namedMW) Name() string { return n.name }

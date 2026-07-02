@@ -12,23 +12,27 @@ import (
 )
 
 func TestLogger(t *testing.T) {
+	type logCall struct {
+		err                 error
+		method, path, query string
+		status              int
+		duration            time.Duration
+	}
+
 	t.Run("logs request without body or query by default", func(t *testing.T) {
-		var logCalls []struct {
-			method, path, query string
-			status              int
-			duration            time.Duration
-			err                 error
-		}
+		var logCalls []logCall
 
 		r := server.NewAPI(server.NewServeMuxAdapter())
 		r.Use(plugins.Logger(plugins.LoggerConfig{
 			LogFunc: func(method, path, query string, status int, duration time.Duration, err error) {
-				logCalls = append(logCalls, struct {
-					method, path, query string
-					status              int
-					duration            time.Duration
-					err                 error
-				}{method, path, query, status, duration, err})
+				logCalls = append(logCalls, logCall{
+					err:      err,
+					method:   method,
+					path:     path,
+					query:    query,
+					status:   status,
+					duration: duration,
+				})
 			},
 		}))
 
@@ -54,23 +58,20 @@ func TestLogger(t *testing.T) {
 	})
 
 	t.Run("logs query string when configured", func(t *testing.T) {
-		var logCalls []struct {
-			method, path, query string
-			status              int
-			duration            time.Duration
-			err                 error
-		}
+		var logCalls []logCall
 
 		r := server.NewAPI(server.NewServeMuxAdapter())
 		r.Use(plugins.Logger(plugins.LoggerConfig{
 			WithQuery: true,
 			LogFunc: func(method, path, query string, status int, duration time.Duration, err error) {
-				logCalls = append(logCalls, struct {
-					method, path, query string
-					status              int
-					duration            time.Duration
-					err                 error
-				}{method, path, query, status, duration, err})
+				logCalls = append(logCalls, logCall{
+					err:      err,
+					method:   method,
+					path:     path,
+					query:    query,
+					status:   status,
+					duration: duration,
+				})
 			},
 		}))
 

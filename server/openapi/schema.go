@@ -1,54 +1,54 @@
 package openapi
 
 type Schema struct {
-	Type                 string             `json:"type,omitempty"`
-	Format               string             `json:"format,omitempty"`
-	Description          string             `json:"description,omitempty"`
-	Title                string             `json:"title,omitempty"`
 	Default              any                `json:"default,omitempty"`
+	AdditionalProperties any                `json:"additionalProperties,omitempty"`
 	Example              any                `json:"example,omitempty"`
-	Nullable             bool               `json:"nullable,omitempty"`
+	Not                  *Schema            `json:"not,omitempty"`
+	MaxItems             *int               `json:"maxItems,omitempty"`
+	MaxProperties        *int               `json:"maxProperties,omitempty"`
+	MinProperties        *int               `json:"minProperties,omitempty"`
 	Properties           map[string]*Schema `json:"properties,omitempty"`
 	Items                *Schema            `json:"items,omitempty"`
-	Required             []string           `json:"required,omitempty"`
-	AdditionalProperties any                `json:"additionalProperties,omitempty"`
-	Enum                 []any              `json:"enum,omitempty"`
+	ExclusiveMinimum     *float64           `json:"exclusiveMinimum,omitempty"`
+	MinItems             *int               `json:"minItems,omitempty"`
+	Maximum              *float64           `json:"maximum,omitempty"`
+	MinLength            *int               `json:"minLength,omitempty"`
+	ExclusiveMaximum     *float64           `json:"exclusiveMaximum,omitempty"`
+	Minimum              *float64           `json:"minimum,omitempty"`
+	MaxLength            *int               `json:"maxLength,omitempty"`
+	Description          string             `json:"description,omitempty"`
+	Title                string             `json:"title,omitempty"`
+	Type                 string             `json:"type,omitempty"`
+	Format               string             `json:"format,omitempty"`
+	Pattern              string             `json:"pattern,omitempty"`
 	Ref                  string             `json:"$ref,omitempty"`
 	AllOf                []*Schema          `json:"allOf,omitempty"`
+	Enum                 []any              `json:"enum,omitempty"`
 	OneOf                []*Schema          `json:"oneOf,omitempty"`
 	AnyOf                []*Schema          `json:"anyOf,omitempty"`
-	Not                  *Schema            `json:"not,omitempty"`
-	Minimum              *float64           `json:"minimum,omitempty"`
-	Maximum              *float64           `json:"maximum,omitempty"`
-	ExclusiveMinimum     *float64           `json:"exclusiveMinimum,omitempty"`
-	ExclusiveMaximum     *float64           `json:"exclusiveMaximum,omitempty"`
-	MinLength            *int               `json:"minLength,omitempty"`
-	MaxLength            *int               `json:"maxLength,omitempty"`
-	Pattern              string             `json:"pattern,omitempty"`
-	MinItems             *int               `json:"minItems,omitempty"`
-	MaxItems             *int               `json:"maxItems,omitempty"`
+	Required             []string           `json:"required,omitempty"`
 	UniqueItems          bool               `json:"uniqueItems,omitempty"`
-	MinProperties        *int               `json:"minProperties,omitempty"`
-	MaxProperties        *int               `json:"maxProperties,omitempty"`
+	Nullable             bool               `json:"nullable,omitempty"`
 	ReadOnly             bool               `json:"readOnly,omitempty"`
 	WriteOnly            bool               `json:"writeOnly,omitempty"`
 	Deprecated           bool               `json:"deprecated,omitempty"`
 }
 
 type Parameter struct {
+	Schema      *Schema `json:"schema,omitempty"`
 	Name        string  `json:"name"`
 	In          string  `json:"in"`
 	Description string  `json:"description,omitempty"`
-	Required    bool    `json:"required,omitempty"`
-	Schema      *Schema `json:"schema,omitempty"`
 	Style       string  `json:"style,omitempty"`
+	Required    bool    `json:"required,omitempty"`
 	Explode     bool    `json:"explode,omitempty"`
 }
 
 type RequestBody struct {
+	Content     map[string]*MediaType `json:"content,omitempty"`
 	Description string                `json:"description,omitempty"`
 	Required    bool                  `json:"required,omitempty"`
-	Content     map[string]*MediaType `json:"content,omitempty"`
 }
 
 type MediaType struct {
@@ -56,17 +56,17 @@ type MediaType struct {
 }
 
 type Response struct {
-	Description string                `json:"description,omitempty"`
 	Headers     map[string]*Parameter `json:"headers,omitempty"`
 	Content     map[string]*MediaType `json:"content,omitempty"`
+	Description string                `json:"description,omitempty"`
 }
 
 type Info struct {
+	Contact     *Contact `json:"contact,omitempty"`
+	License     *License `json:"license,omitempty"`
 	Title       string   `json:"title"`
 	Description string   `json:"description,omitempty"`
 	Version     string   `json:"version"`
-	Contact     *Contact `json:"contact,omitempty"`
-	License     *License `json:"license,omitempty"`
 }
 
 type Contact struct {
@@ -82,9 +82,9 @@ type License struct {
 }
 
 type Server struct {
+	Variables   map[string]*ServerVariable `json:"variables,omitempty"`
 	URL         string                     `json:"url"`
 	Description string                     `json:"description,omitempty"`
-	Variables   map[string]*ServerVariable `json:"variables,omitempty"`
 }
 
 type ServerVariable struct {
@@ -94,11 +94,11 @@ type ServerVariable struct {
 }
 
 type OpenAPI struct {
-	OpenAPI    string               `json:"openapi"`
 	Info       Info                 `json:"info"`
-	Servers    []*Server            `json:"servers,omitempty"`
 	Paths      map[string]*PathItem `json:"paths"`
 	Components *Components          `json:"components,omitempty"`
+	OpenAPI    string               `json:"openapi"`
+	Servers    []*Server            `json:"servers,omitempty"`
 }
 
 type PathItem struct {
@@ -116,15 +116,15 @@ type PathItem struct {
 }
 
 type Operation struct {
-	Tags        []string              `json:"tags,omitempty"`
+	RequestBody *RequestBody          `json:"requestBody,omitempty"`
+	Responses   map[string]*Response  `json:"responses,omitempty"`
 	Summary     string                `json:"summary,omitempty"`
 	Description string                `json:"description,omitempty"`
 	OperationID string                `json:"operationId,omitempty"`
+	Tags        []string              `json:"tags,omitempty"`
 	Parameters  []*Parameter          `json:"parameters,omitempty"`
-	RequestBody *RequestBody          `json:"requestBody,omitempty"`
-	Responses   map[string]*Response  `json:"responses,omitempty"`
-	Deprecated  bool                  `json:"deprecated,omitempty"`
 	Security    []map[string][]string `json:"security,omitempty"`
+	Deprecated  bool                  `json:"deprecated,omitempty"`
 }
 
 type Components struct {
@@ -164,10 +164,10 @@ type OAuthFlows struct {
 
 // OAuthFlow describes a single OAuth2 flow.
 type OAuthFlow struct {
+	Scopes           map[string]string `json:"scopes,omitempty"`
 	AuthorizationURL string            `json:"authorizationUrl,omitempty"`
 	TokenURL         string            `json:"tokenUrl,omitempty"`
 	RefreshURL       string            `json:"refreshUrl,omitempty"`
-	Scopes           map[string]string `json:"scopes,omitempty"`
 }
 
 func NewOpenAPI(title, version string) *OpenAPI {

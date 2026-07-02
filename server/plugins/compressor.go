@@ -25,20 +25,20 @@ var (
 )
 
 type CompressorConfig struct {
-	Level                   int
 	ContentTypes            []string
+	Level                   int
 	MaxCompressedSize       int64
 	MaxBufferedResponseSize int64
 }
 
 type compressorMiddleware struct {
-	level                   int
 	contentTypes            map[string]struct{}
 	contentWildcard         map[string]struct{}
-	maxCompressedSize       int64
-	maxBufferedResponseSize int64
 	poolBrotli              *sync.Pool
 	poolGzip                *sync.Pool
+	level                   int
+	maxCompressedSize       int64
+	maxBufferedResponseSize int64
 }
 
 func Compressor(cfg ...CompressorConfig) server.Middleware {
@@ -434,25 +434,25 @@ type streamFlusher interface {
 }
 
 type compressResponseWriter struct {
+	terminalErr error
 	http.ResponseWriter
-	body            *spillBuffer
-	contentTypes    map[string]struct{}
-	contentWildcard map[string]struct{}
-	encoding        string
-	identityAllowed bool
+	streamFlusher   streamFlusher
 	streamWriter    io.Writer
 	streamCloser    io.Closer
-	streamFlusher   streamFlusher
-	useBuffer       bool
-	compressible    bool
-	passthrough     bool
-	terminalErr     error
 	streamErr       error
+	contentTypes    map[string]struct{}
+	body            *spillBuffer
+	contentWildcard map[string]struct{}
+	encoding        string
+	requestMethod   string
+	statusCode      int
+	identityAllowed bool
+	passthrough     bool
 	wroteHeader     bool
 	wroteToClient   bool
 	hijacked        bool
-	requestMethod   string
-	statusCode      int
+	compressible    bool
+	useBuffer       bool
 }
 
 func (cw *compressResponseWriter) isCompressible() bool {
@@ -724,10 +724,10 @@ func (b *boundedBuffer) Bytes() []byte {
 }
 
 type spillBuffer struct {
+	file     *os.File
+	mem      bytes.Buffer
 	memLimit int64
 	maxSize  int64
-	mem      bytes.Buffer
-	file     *os.File
 	size     int64
 }
 

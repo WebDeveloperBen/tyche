@@ -28,9 +28,9 @@ type confInput struct {
 }
 
 type confOutput struct {
+	ETag   string `header:"ETag"`
 	Body   confOutBody
 	Status int
-	ETag   string `header:"ETag"`
 }
 
 func confHandler(_ context.Context, in *confInput) (*confOutput, error) {

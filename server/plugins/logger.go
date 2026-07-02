@@ -37,11 +37,11 @@ func (sr *statusRecorder) Write(b []byte) (int, error) {
 }
 
 type LoggerConfig struct {
+	LogFunc     func(method, path, query string, status int, duration time.Duration, err error)
+	MaxBodySize int
 	WithBody    bool
 	WithQuery   bool
 	DurationMs  bool
-	MaxBodySize int
-	LogFunc     func(method, path, query string, status int, duration time.Duration, err error)
 }
 
 func Logger(cfg ...LoggerConfig) server.Middleware {

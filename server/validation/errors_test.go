@@ -9,19 +9,19 @@ import (
 func TestJSONPointer(t *testing.T) {
 	tests := []struct {
 		name  string
-		parts []string
 		want  string
+		parts []string
 	}{
-		{"nil parts", nil, ""},
-		{"single empty part", []string{""}, ""},
-		{"single part", []string{"foo"}, "/foo"},
-		{"two parts", []string{"foo", "bar"}, "/foo/bar"},
-		{"three parts", []string{"a", "b", "c"}, "/a/b/c"},
-		{"tilde escape", []string{"tilde~field"}, "/tilde~0field"},
-		{"slash escape", []string{"slash/field"}, "/slash~1field"},
-		{"both escapes", []string{"a~b/c"}, "/a~0b~1c"},
-		{"skip empty parts", []string{"a", "", "b"}, "/a/b"},
-		{"leading empty part", []string{"", "a"}, "/a"},
+		{name: "nil parts", parts: nil, want: ""},
+		{name: "single empty part", parts: []string{""}, want: ""},
+		{name: "single part", parts: []string{"foo"}, want: "/foo"},
+		{name: "two parts", parts: []string{"foo", "bar"}, want: "/foo/bar"},
+		{name: "three parts", parts: []string{"a", "b", "c"}, want: "/a/b/c"},
+		{name: "tilde escape", parts: []string{"tilde~field"}, want: "/tilde~0field"},
+		{name: "slash escape", parts: []string{"slash/field"}, want: "/slash~1field"},
+		{name: "both escapes", parts: []string{"a~b/c"}, want: "/a~0b~1c"},
+		{name: "skip empty parts", parts: []string{"a", "", "b"}, want: "/a/b"},
+		{name: "leading empty part", parts: []string{"", "a"}, want: "/a"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -37,15 +37,15 @@ func TestJoinPointer(t *testing.T) {
 	tests := []struct {
 		name  string
 		base  string
-		parts []string
 		want  string
+		parts []string
 	}{
-		{"empty base uses JSONPointer", "", []string{"foo"}, "/foo"},
-		{"base with part", "/base", []string{"field"}, "/base/field"},
-		{"bare base with part", "base", []string{"field"}, "base/field"},
-		{"skip empty parts", "/base", []string{"", "field"}, "/base/field"},
-		{"multiple parts", "/root", []string{"a", "b"}, "/root/a/b"},
-		{"no parts", "/base", nil, "/base"},
+		{name: "empty base uses JSONPointer", base: "", parts: []string{"foo"}, want: "/foo"},
+		{name: "base with part", base: "/base", parts: []string{"field"}, want: "/base/field"},
+		{name: "bare base with part", base: "base", parts: []string{"field"}, want: "base/field"},
+		{name: "skip empty parts", base: "/base", parts: []string{"", "field"}, want: "/base/field"},
+		{name: "multiple parts", base: "/root", parts: []string{"a", "b"}, want: "/root/a/b"},
+		{name: "no parts", base: "/base", parts: nil, want: "/base"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -61,13 +61,13 @@ func TestJoinPointerWithIndex(t *testing.T) {
 	tests := []struct {
 		name  string
 		base  string
-		index int
 		want  string
+		index int
 	}{
-		{"empty base", "", 0, "0"},
-		{"empty base non-zero index", "", 5, "5"},
-		{"with base", "/items", 0, "/items/0"},
-		{"with base non-zero", "/items", 3, "/items/3"},
+		{name: "empty base", base: "", index: 0, want: "0"},
+		{name: "empty base non-zero index", base: "", index: 5, want: "5"},
+		{name: "with base", base: "/items", index: 0, want: "/items/0"},
+		{name: "with base non-zero", base: "/items", index: 3, want: "/items/3"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -168,21 +168,21 @@ func TestRuleProblem_Messages(t *testing.T) {
 	tests := []struct {
 		kind    validation.RuleKind
 		subject validation.Subject
-		value   int
 		code    string
+		value   int
 	}{
-		{validation.RuleMin, validation.SubjectString, 5, "min"},
-		{validation.RuleMin, validation.SubjectNumber, 0, "min"},
-		{validation.RuleMax, validation.SubjectString, 10, "max"},
-		{validation.RuleMax, validation.SubjectNumber, 100, "max"},
-		{validation.RuleLen, validation.SubjectString, 8, "length"},
-		{validation.RuleMinItems, validation.SubjectCollection, 2, "min_items"},
-		{validation.RuleMaxItems, validation.SubjectCollection, 5, "max_items"},
-		{validation.RuleOneOf, validation.SubjectString, 0, "one_of"},
-		{validation.RulePattern, validation.SubjectString, 0, "pattern"},
-		{validation.RuleEmail, validation.SubjectString, 0, "invalid_email"},
-		{validation.RuleURL, validation.SubjectString, 0, "invalid_url"},
-		{validation.RuleUUID, validation.SubjectString, 0, "invalid_uuid"},
+		{kind: validation.RuleMin, subject: validation.SubjectString, value: 5, code: "min"},
+		{kind: validation.RuleMin, subject: validation.SubjectNumber, value: 0, code: "min"},
+		{kind: validation.RuleMax, subject: validation.SubjectString, value: 10, code: "max"},
+		{kind: validation.RuleMax, subject: validation.SubjectNumber, value: 100, code: "max"},
+		{kind: validation.RuleLen, subject: validation.SubjectString, value: 8, code: "length"},
+		{kind: validation.RuleMinItems, subject: validation.SubjectCollection, value: 2, code: "min_items"},
+		{kind: validation.RuleMaxItems, subject: validation.SubjectCollection, value: 5, code: "max_items"},
+		{kind: validation.RuleOneOf, subject: validation.SubjectString, value: 0, code: "one_of"},
+		{kind: validation.RulePattern, subject: validation.SubjectString, value: 0, code: "pattern"},
+		{kind: validation.RuleEmail, subject: validation.SubjectString, value: 0, code: "invalid_email"},
+		{kind: validation.RuleURL, subject: validation.SubjectString, value: 0, code: "invalid_url"},
+		{kind: validation.RuleUUID, subject: validation.SubjectString, value: 0, code: "invalid_uuid"},
 	}
 	for _, tt := range tests {
 		t.Run(string(tt.kind), func(t *testing.T) {

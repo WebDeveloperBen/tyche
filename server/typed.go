@@ -19,22 +19,22 @@ import (
 )
 
 type Operation struct {
-	OperationID         string
-	Method              string
-	Path                string
-	Summary             string
-	Description         string
-	Tags                []string
-	DefaultStatus       int
-	Deprecated          bool
-	SkipValidateRequest bool
+	OperationID string
+	Method      string
+	Path        string
+	Summary     string
+	Description string
+	Tags        []string
 	// Security lists the security requirements for this operation. Each entry
 	// is a set of scheme names (referencing schemes registered via
 	// [API.AddSecurityScheme]) that must all be satisfied; multiple entries
 	// are alternatives (logical OR). The value for each scheme is the list of
 	// required OAuth2 scopes, or an empty slice for non-OAuth2 schemes. Use
 	// [SecurityRequirement] to build entries.
-	Security []SecurityRequirement
+	Security            []SecurityRequirement
+	DefaultStatus       int
+	Deprecated          bool
+	SkipValidateRequest bool
 }
 
 // SecurityRequirement maps security scheme names to the scopes they require for
@@ -45,14 +45,14 @@ type SecurityRequirement = map[string][]string
 type TypedHandler[I, O any] func(context.Context, *I) (*O, error)
 
 type RegisteredOperation struct {
+	InputType   reflect.Type
+	OutputType  reflect.Type
 	Method      string
 	Path        string
 	Summary     string
 	Description string
 	OperationID string
 	Tags        []string
-	InputType   reflect.Type
-	OutputType  reflect.Type
 }
 
 func Register[I, O any](grp RouteTarget, op Operation, handler TypedHandler[I, O], opts ...RouteOption) {
@@ -423,15 +423,15 @@ func WriteSuccess(w http.ResponseWriter, status int, data any) error {
 }
 
 type inputBinding struct {
-	index     int
-	name      string
-	location  string
-	source    string
-	required  bool
 	read      func(*http.Request) (string, bool, error)
 	readSlice func(*http.Request) ([]string, bool, error)
 	set       func(reflect.Value, string) error
 	setSlice  func(reflect.Value, []string) error
+	name      string
+	location  string
+	source    string
+	index     int
+	required  bool
 }
 
 type bodyBindingMode uint8
@@ -449,13 +449,13 @@ type RequiredJSONField struct {
 
 type inputSpec struct {
 	typ                reflect.Type
-	bindings           []inputBinding
-	bodyMode           bodyBindingMode
-	bodyIndex          int
 	bodyType           reflect.Type
-	bodyRequired       bool
-	requiredBodyFields []RequiredJSONField
 	validationSpec     atomic.Pointer[validation.StructSpec]
+	bindings           []inputBinding
+	requiredBodyFields []RequiredJSONField
+	bodyIndex          int
+	bodyMode           bodyBindingMode
+	bodyRequired       bool
 }
 
 var inputSpecCache sync.Map
@@ -918,20 +918,20 @@ var requestBodyBufPool = sync.Pool{
 }
 
 type outputHeaderField struct {
-	index    int
-	name     string
-	required bool
 	get      func(reflect.Value) (string, bool, error)
+	name     string
+	index    int
+	required bool
 }
 
 type outputSpec struct {
 	typ           reflect.Type
+	bodyValue     func(reflect.Value) any
+	headers       []outputHeaderField
 	bodyIndex     int
 	statusIndex   int
 	defaultStatus int
-	headers       []outputHeaderField
 	noBody        bool
-	bodyValue     func(reflect.Value) any
 }
 
 var outputSpecCache sync.Map

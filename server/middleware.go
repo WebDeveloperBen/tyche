@@ -66,10 +66,8 @@ type NamedMiddleware interface {
 // routeOptions accumulates per-route configuration supplied via [RouteOption]
 // values when registering a single route.
 type routeOptions struct {
-	middleware []Middleware
-	// maxBodyBytes overrides the router-wide request body limit for this route
-	// when non-nil. A value of 0 means the route accepts an unlimited body.
 	maxBodyBytes *int64
+	middleware   []Middleware
 }
 
 // RouteOption customizes the registration of an individual route. Options are

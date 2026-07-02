@@ -45,11 +45,11 @@ func newRateLimiter(requestsPerSecond, burst int) *RateLimiter {
 // RateLimiter is a token-bucket rate limiter. Apply it as middleware with
 // api.Use(rl.Middleware()) and call Stop when done to end its refill goroutine.
 type RateLimiter struct {
+	closed            chan struct{}
 	requestsPerSecond int
 	burst             int
 	maxTokens         int64
 	tokens            int64
-	closed            chan struct{}
 	stopped           atomic.Bool
 }
 

@@ -6,15 +6,15 @@ import (
 )
 
 type CookieConfig struct {
+	Expires  time.Time
 	Name     string
 	Value    string
 	Path     string
 	Domain   string
 	MaxAge   int
+	SameSite http.SameSite
 	Secure   bool
 	HTTPOnly bool
-	SameSite http.SameSite
-	Expires  time.Time
 }
 
 func SetCookie(w http.ResponseWriter, cfg CookieConfig) {

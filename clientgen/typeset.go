@@ -25,23 +25,21 @@ type structField struct {
 	GoName   string
 	JSONName string
 	GoType   string
-	Optional bool
 	Doc      string
+	Optional bool
 }
 
 type structType struct {
 	Name   string
-	Fields []structField
 	Doc    string
+	Fields []structField
 }
 
 type enumType struct {
-	Name string
-	// Base is the underlying Go type: "string" or an integer type
-	// ("int"/"int32"/"int64"). It drives how values are rendered as constants.
+	Name   string
 	Base   string
-	Values []string
 	Doc    string
+	Values []string
 }
 
 func newTypeSet(doc *Document) *typeSet {

@@ -14,13 +14,13 @@ type GeneratedRouteCodec struct {
 }
 
 type generatedCodecEntry struct {
-	meta  GeneratedRouteMeta
 	codec GeneratedRouteCodec
+	meta  GeneratedRouteMeta
 }
 
 var generatedCodecRegistry struct {
-	mu     sync.RWMutex
 	codecs []generatedCodecEntry
+	mu     sync.RWMutex
 }
 
 var encoderBufPool = sync.Pool{

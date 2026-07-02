@@ -13,17 +13,17 @@ type StructSpec struct {
 }
 
 type FieldSpec struct {
-	Index       int
-	Name        string
 	Type        reflect.Type
-	HasParam    bool
-	Required    bool
-	Rules       FieldRules
+	ElementType reflect.Type
+	Nested      *StructSpec
+	ElemNested  *StructSpec
+	Name        string
 	Pointer     string
 	FullPointer string
-	Nested      *StructSpec
-	ElementType reflect.Type
-	ElemNested  *StructSpec
+	Rules       FieldRules
+	Index       int
+	HasParam    bool
+	Required    bool
 }
 
 type cachedSpec struct {
@@ -34,9 +34,9 @@ type cachedSpec struct {
 const maxSpecCacheSize = 1024
 
 type lruCache struct {
-	mu    sync.Mutex
 	cache map[reflect.Type]*list.Element
 	order *list.List
+	mu    sync.Mutex
 }
 
 func newLRUCache() *lruCache {

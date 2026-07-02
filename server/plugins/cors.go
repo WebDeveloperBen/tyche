@@ -13,27 +13,27 @@ import (
 var ErrCORSWildcardWithCredentials = errors.New("CORS: wildcard origin with AllowCredentials is invalid; credentials require specific origin")
 
 type CORSConfig struct {
+	AllowOriginFunc    func(r *http.Request, origin string) bool
 	AllowedOrigins     []string
 	AllowedMethods     []string
 	AllowedHeaders     []string
 	ExposedHeaders     []string
-	AllowCredentials   bool
 	MaxAge             int
-	AllowOriginFunc    func(r *http.Request, origin string) bool
+	AllowCredentials   bool
 	OptionsPassthrough bool
 }
 
 type corsMiddleware struct {
 	allowedOrigins     map[string]struct{}
-	allowedWOrigins    []wildcard
 	allowedHeaders     map[string]struct{}
 	allowedMethods     map[string]struct{}
+	allowOriginFunc    func(r *http.Request, origin string) bool
 	exposedHeaders     string
+	allowedWOrigins    []wildcard
 	maxAge             int
 	allowCredentials   bool
 	allowOriginsAll    bool
 	allowHeadersAll    bool
-	allowOriginFunc    func(r *http.Request, origin string) bool
 	optionsPassthrough bool
 }
 

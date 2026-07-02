@@ -11,10 +11,10 @@ import (
 // openapi types) so parsing is robust — most importantly so additionalProperties
 // can be a schema or a boolean.
 type Document struct {
-	OpenAPI    string               `json:"openapi"`
-	Info       Info                 `json:"info"`
 	Paths      map[string]*PathItem `json:"paths"`
 	Components *Components          `json:"components"`
+	Info       Info                 `json:"info"`
+	OpenAPI    string               `json:"openapi"`
 }
 
 type Info struct {
@@ -43,14 +43,14 @@ type PathItem struct {
 func (p *PathItem) methods() []methodOp {
 	out := make([]methodOp, 0, 4)
 	for _, m := range []methodOp{
-		{"GET", p.Get},
-		{"POST", p.Post},
-		{"PUT", p.Put},
-		{"PATCH", p.Patch},
-		{"DELETE", p.Delete},
-		{"HEAD", p.Head},
-		{"OPTIONS", p.Options},
-		{"TRACE", p.Trace},
+		{method: "GET", op: p.Get},
+		{method: "POST", op: p.Post},
+		{method: "PUT", op: p.Put},
+		{method: "PATCH", op: p.Patch},
+		{method: "DELETE", op: p.Delete},
+		{method: "HEAD", op: p.Head},
+		{method: "OPTIONS", op: p.Options},
+		{method: "TRACE", op: p.Trace},
 	} {
 		if m.op != nil {
 			out = append(out, m)
@@ -60,33 +60,33 @@ func (p *PathItem) methods() []methodOp {
 }
 
 type methodOp struct {
-	method string
 	op     *Operation
+	method string
 }
 
 type Operation struct {
+	RequestBody *RequestBody         `json:"requestBody"`
+	Responses   map[string]*Response `json:"responses"`
 	OperationID string               `json:"operationId"`
 	Summary     string               `json:"summary"`
 	Description string               `json:"description"`
 	Tags        []string             `json:"tags"`
 	Parameters  []*Parameter         `json:"parameters"`
-	RequestBody *RequestBody         `json:"requestBody"`
-	Responses   map[string]*Response `json:"responses"`
 	Deprecated  bool                 `json:"deprecated"`
 }
 
 type Parameter struct {
+	Schema      *Schema `json:"schema"`
 	Name        string  `json:"name"`
 	In          string  `json:"in"`
 	Description string  `json:"description"`
 	Required    bool    `json:"required"`
-	Schema      *Schema `json:"schema"`
 }
 
 type RequestBody struct {
+	Content     map[string]*MediaType `json:"content"`
 	Description string                `json:"description"`
 	Required    bool                  `json:"required"`
-	Content     map[string]*MediaType `json:"content"`
 }
 
 type MediaType struct {
@@ -94,26 +94,26 @@ type MediaType struct {
 }
 
 type Response struct {
-	Description string                `json:"description"`
 	Headers     map[string]*Parameter `json:"headers"`
 	Content     map[string]*MediaType `json:"content"`
+	Description string                `json:"description"`
 }
 
 // Schema is the subset of JSON Schema / OpenAPI schema the generator understands.
 type Schema struct {
-	Ref                  string                `json:"$ref"`
-	Type                 string                `json:"type"`
-	Format               string                `json:"format"`
-	Description          string                `json:"description"`
-	Nullable             bool                  `json:"nullable"`
 	Properties           map[string]*Schema    `json:"properties"`
-	Required             []string              `json:"required"`
-	Items                *Schema               `json:"items"`
-	Enum                 []any                 `json:"enum"`
 	AdditionalProperties *AdditionalProperties `json:"additionalProperties"`
+	Items                *Schema               `json:"items"`
+	Description          string                `json:"description"`
+	Ref                  string                `json:"$ref"`
+	Format               string                `json:"format"`
+	Type                 string                `json:"type"`
+	Required             []string              `json:"required"`
+	Enum                 []any                 `json:"enum"`
 	AllOf                []*Schema             `json:"allOf"`
 	OneOf                []*Schema             `json:"oneOf"`
 	AnyOf                []*Schema             `json:"anyOf"`
+	Nullable             bool                  `json:"nullable"`
 }
 
 // AdditionalProperties models the JSON Schema additionalProperties keyword,

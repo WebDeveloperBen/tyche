@@ -18,8 +18,8 @@ type GeneratedRouteMeta struct {
 }
 
 var generatedManifestRegistry struct {
-	mu     sync.RWMutex
 	routes []GeneratedRouteMeta
+	mu     sync.RWMutex
 }
 
 func RegisterGeneratedManifest(routes ...GeneratedRouteMeta) {

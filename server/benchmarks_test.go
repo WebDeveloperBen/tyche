@@ -14,8 +14,8 @@ import (
 type benchmarkValidationNestedItem struct {
 	ID    string   `json:"id" validate:"uuid"`
 	URL   string   `json:"url" validate:"url"`
-	Tags  []string `json:"tags" validate:"minItems=1,items.min=2"`
 	Email string   `json:"email" validate:"email"`
+	Tags  []string `json:"tags" validate:"minItems=1,items.min=2"`
 }
 
 type benchmarkValidationInput struct {

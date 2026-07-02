@@ -26,14 +26,14 @@ var ErrStreamClosed = errors.New("server: event stream is closed")
 // no data field; any other value is marshaled to JSON. Multi-line data is
 // split across multiple "data:" lines per the SSE specification.
 type SSEEvent struct {
+	// Data is the event payload. See [SSEEvent] for encoding rules.
+	Data any
 	// ID sets the event's "id" field, used by clients as the
 	// Last-Event-ID on reconnect. Optional.
 	ID string
 	// Event sets the event's "event" field (the event type). Optional;
 	// defaults to "message" on the client when empty.
 	Event string
-	// Data is the event payload. See [SSEEvent] for encoding rules.
-	Data any
 	// Retry, when > 0, sets the client's reconnection time in milliseconds.
 	Retry int
 }

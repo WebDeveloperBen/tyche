@@ -8,13 +8,13 @@ import (
 )
 
 type recursiveLeft struct {
-	Name  string          `json:"name"`
 	Right *recursiveRight `json:"right,omitempty"`
+	Name  string          `json:"name"`
 }
 
 type recursiveRight struct {
-	Name string         `json:"name"`
 	Left *recursiveLeft `json:"left,omitempty"`
+	Name string         `json:"name"`
 }
 
 func TestRegistry_DoesNotLeakFieldMetadataAcrossSharedTypes(t *testing.T) {

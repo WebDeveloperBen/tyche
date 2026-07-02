@@ -26,16 +26,16 @@ const (
 
 type Rule struct {
 	Kind   RuleKind
-	Int    int
 	String string
 	List   []string
+	Int    int
 }
 
 type FieldRules struct {
-	Required  bool
-	OmitEmpty bool
 	Rules     []Rule
 	ItemRules []Rule
+	Required  bool
+	OmitEmpty bool
 }
 
 func ParseFieldRules(tag reflect.StructTag) (FieldRules, error) {
