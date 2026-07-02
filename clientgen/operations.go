@@ -28,6 +28,7 @@ type operation struct {
 	OutputType string // "" when the operation has no response body
 	Stream     bool   // true for text/event-stream operations
 	EventType  string // event data type when Stream is true
+	Bytes      bool   // true when the success body is a non-JSON media type
 	Summary    string
 	Deprecated bool
 }
@@ -103,8 +104,25 @@ func resolveOperation(ts *typeSet, doc *Document, path, method string, op *Opera
 		o.EventType = ts.goType(ev, goName+"Event")
 	} else if data, ok := successData(doc, op); ok {
 		o.OutputType = ts.goType(data, goName+"Output")
+	} else if successBytes(op) {
+		o.Bytes = true
 	}
 	return o
+}
+
+// successBytes reports whether the lowest 2xx response carries a body in a
+// single non-JSON, non-SSE media type (e.g. application/octet-stream, text/*).
+// Such a response is returned to the caller as raw bytes rather than being
+// JSON-decoded — or, as before this, silently discarded.
+func successBytes(op *Operation) bool {
+	resp := lowest2xx(op)
+	if resp == nil || len(resp.Content) == 0 {
+		return false
+	}
+	if resp.Content["application/json"] != nil || resp.Content["text/event-stream"] != nil {
+		return false
+	}
+	return true
 }
 
 // lowest2xx returns the response for the lowest 2xx status code, or nil.
@@ -199,6 +217,8 @@ func emitMethod(b *strings.Builder, clientName string, o *operation) {
 		ret = "(*Stream[" + o.EventType + "], error)"
 	case o.OutputType != "":
 		ret = "(*" + o.OutputType + ", error)"
+	case o.Bytes:
+		ret = "([]byte, error)"
 	}
 	fmt.Fprintf(b, "func (c *%s) %s(ctx context.Context, in *%s, opts ...CallOption) %s {\n", clientName, o.GoName, o.InputName, ret)
 	b.WriteString("\tif in == nil {\n\t\tin = &" + o.InputName + "{}\n\t}\n")
@@ -211,6 +231,8 @@ func emitMethod(b *strings.Builder, clientName string, o *operation) {
 		fmt.Fprintf(b, "\treturn doStream[%s](ctx, c, %s, path, %s, %s, %s, opts)\n", o.EventType, httpMethod, queryArg, headerArg, bodyArg)
 	case o.OutputType != "":
 		fmt.Fprintf(b, "\treturn doJSON[%s](ctx, c, %s, path, %s, %s, %s, opts)\n", o.OutputType, httpMethod, queryArg, headerArg, bodyArg)
+	case o.Bytes:
+		fmt.Fprintf(b, "\treturn doBytes(ctx, c, %s, path, %s, %s, %s, opts)\n", httpMethod, queryArg, headerArg, bodyArg)
 	default:
 		fmt.Fprintf(b, "\treturn doDiscard(ctx, c, %s, path, %s, %s, %s, opts)\n", httpMethod, queryArg, headerArg, bodyArg)
 	}

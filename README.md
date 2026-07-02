@@ -336,15 +336,15 @@ Because the client is its own module with its own tags, consumers
 operations generate a streaming method returning a typed `*Stream[Event]`
 (scanner API: `Next`/`Event`/`Err`/`Close`).
 
-String and integer enums generate a named type with typed constants, and `allOf`
+String and integer enums generate a named type with typed constants, `allOf`
 compositions of objects are merged into a single struct (keeping the component
-name).
+name), and a success response in a non-JSON media type returns `[]byte` rather
+than being decoded or dropped.
 
 **Current limitations:** structural dedup means two distinct shapes with
-identical structure share one Go type; `oneOf`/`anyOf` unions are emitted as
-`json.RawMessage`; an `allOf` that isn't a clean object composition falls back to
-`json.RawMessage`; and successful responses are decoded as JSON regardless of
-`Content-Type`.
+identical structure share one Go type (most relevant for tyche's fully-inlined
+specs); and `oneOf`/`anyOf` unions plus non-object `allOf` compositions are
+emitted as `json.RawMessage`.
 
 ## Benchmarks
 

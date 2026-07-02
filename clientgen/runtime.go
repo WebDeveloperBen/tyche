@@ -377,6 +377,9 @@ func doJSON[O any](ctx context.Context, c *CLIENTTYPE, method, path string, quer
 		Data O ` + "`json:\"data\"`" + `
 	}
 	if len(data) > 0 {
+		if !isJSONResponse(resp) {
+			return nil, fmt.Errorf("expected a JSON response but got Content-Type %q", resp.Header.Get("Content-Type"))
+		}
 		if err := json.Unmarshal(data, &env); err != nil {
 			return nil, fmt.Errorf("decode response: %w", err)
 		}
@@ -393,6 +396,34 @@ func doDiscard(ctx context.Context, c *CLIENTTYPE, method, path string, query ur
 		return parseAPIError(resp.StatusCode, data)
 	}
 	return nil
+}
+
+// doBytes returns the raw success body for a response whose media type is not
+// JSON (e.g. a binary download or text payload). The envelope is not applied.
+func doBytes(ctx context.Context, c *CLIENTTYPE, method, path string, query url.Values, header http.Header, body any, opts []CallOption) ([]byte, error) {
+	resp, data, err := c.do(ctx, method, path, query, header, body, opts)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, parseAPIError(resp.StatusCode, data)
+	}
+	return data, nil
+}
+
+// isJSONResponse reports whether resp's Content-Type is a JSON media type (or
+// absent). It lets doJSON fail with a clear error rather than a cryptic unmarshal
+// error when a server returns an unexpected content type on a 2xx.
+func isJSONResponse(resp *http.Response) bool {
+	ct := resp.Header.Get("Content-Type")
+	if ct == "" {
+		return true
+	}
+	if i := strings.IndexByte(ct, ';'); i >= 0 {
+		ct = ct[:i]
+	}
+	ct = strings.TrimSpace(ct)
+	return ct == "application/json" || strings.HasSuffix(ct, "+json")
 }
 
 // fmtParam renders a path/query/header value as a string.

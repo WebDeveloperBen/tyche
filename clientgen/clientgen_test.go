@@ -70,6 +70,12 @@ const sampleSpec = `{
         "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "additionalProperties": true}}}},
         "responses": {"204": {"description": "ok"}}
       }
+    },
+    "/report": {
+      "get": {
+        "operationId": "download-report",
+        "responses": {"200": {"description": "pdf", "content": {"application/pdf": {"schema": {"type": "string", "format": "binary"}}}}}
+      }
     }
   },
   "components": {"schemas": {}}
@@ -116,7 +122,8 @@ func TestGenerate_ExpectedFilesAndSymbols(t *testing.T) {
 		"func (c *Client) GetUser(ctx context.Context, in *GetUserInput, opts ...CallOption) (*GetUserOutput, error)",
 		"func (c *Client) CreateUser(ctx context.Context, in *CreateUserInput, opts ...CallOption)",
 		"func (c *Client) ListUsers(ctx context.Context, in *ListUsersInput, opts ...CallOption)",
-		"func (c *Client) DisableUser(ctx context.Context, in *DisableUserInput, opts ...CallOption) error", // 204 -> error only
+		"func (c *Client) DisableUser(ctx context.Context, in *DisableUserInput, opts ...CallOption) error",                 // 204 -> error only
+		"func (c *Client) DownloadReport(ctx context.Context, in *DownloadReportInput, opts ...CallOption) ([]byte, error)", // non-JSON body -> []byte
 		"func (c *Client) StreamEvents(ctx context.Context, in *StreamEventsInput, opts ...CallOption) (*Stream[StreamEventsEvent], error)",
 		"return doStream[StreamEventsEvent](ctx, c, http.MethodGet,",
 		"opts)\n", // opts threaded to the helper call
