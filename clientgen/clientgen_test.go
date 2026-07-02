@@ -30,6 +30,7 @@ const sampleSpec = `{
             "name": {"type": "string"},
             "age": {"type": "integer", "format": "int32"},
             "status": {"type": "string", "enum": ["active", "inactive"]},
+            "priority": {"type": "integer", "enum": [1, 2, 3]},
             "createdAt": {"type": "string", "format": "date-time"},
             "tags": {"type": "array", "items": {"type": "string"}},
             "meta": {"type": "object", "additionalProperties": {"type": "integer", "format": "int64"}}
@@ -153,16 +154,64 @@ func TestGenerate_ExpectedFilesAndSymbols(t *testing.T) {
 	// single space before substring matching.
 	types := normalizeWS(mustFile(res, "types.go"))
 	for _, want := range []string{
-		"CreatedAt *time.Time",            // optional date-time -> *time.Time
-		"Age *int32",                      // optional int32 -> pointer
-		"Meta map[string]int64",           // additionalProperties -> map
-		"Tags []string",                   // array
-		"type GetUserOutputStatus string", // string enum -> named type
+		"CreatedAt *time.Time",                             // optional date-time -> *time.Time
+		"Age *int32",                                       // optional int32 -> pointer
+		"Meta map[string]int64",                            // additionalProperties -> map
+		"Tags []string",                                    // array
+		"type GetUserOutputStatus string",                  // string enum -> named type
+		"type GetUserOutputPriority int",                   // integer enum -> named int type
+		"GetUserOutputPriority1 GetUserOutputPriority = 1", // integer const, unquoted
 		`GetUserOutputStatusActive GetUserOutputStatus = "active"`,
 	} {
 		if !strings.Contains(types, want) {
 			t.Errorf("types.go missing %q", want)
 		}
+	}
+}
+
+const compositionSpec = `{
+  "openapi":"3.1.0","info":{"title":"E","version":"1.0.0"},
+  "paths":{
+    "/pets":{"get":{"operationId":"get-pet","responses":{"200":{"description":"ok","content":{"application/json":{"schema":{"type":"object","properties":{"data":{"$ref":"#/components/schemas/Dog"}}}}}}}}},
+    "/things":{"get":{"operationId":"get-thing","responses":{"200":{"description":"ok","content":{"application/json":{"schema":{"type":"object","properties":{"data":{"type":"object","properties":{"payload":{"oneOf":[{"type":"string"},{"type":"integer"}]}}}}}}}}}}}
+  },
+  "components":{"schemas":{
+    "Animal":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"}},"required":["id"]},
+    "Dog":{"allOf":[{"$ref":"#/components/schemas/Animal"},{"type":"object","properties":{"breed":{"type":"string"},"goodBoy":{"type":"boolean"}},"required":["breed"]}]}
+  }}
+}`
+
+func TestGenerate_AllOfMergesToStruct(t *testing.T) {
+	doc, err := clientgen.ParseDocument([]byte(compositionSpec))
+	if err != nil {
+		t.Fatalf("ParseDocument: %v", err)
+	}
+	res, err := clientgen.Generate(doc, clientgen.Options{Module: "example.com/comp/client"})
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	types := normalizeWS(mustFile(res, "types.go"))
+
+	// allOf merges the base + extension into one named struct, with required
+	// fields flat and optional ones pointers.
+	for _, want := range []string{
+		"type Dog struct", // keeps the component name
+		"ID string",       // required, from the base (merged)
+		"Breed string",    // required, from the extension
+		"Name *string",    // optional, from the base
+		"GoodBoy *bool",   // optional, from the extension
+	} {
+		if !strings.Contains(types, want) {
+			t.Errorf("allOf: types.go missing %q:\n%s", want, mustFile(res, "types.go"))
+		}
+	}
+	if strings.Contains(types, "Data *json.RawMessage") || strings.Contains(types, "Data json.RawMessage") {
+		t.Errorf("allOf should merge to a struct, not stay opaque:\n%s", mustFile(res, "types.go"))
+	}
+
+	// oneOf is a union — Go can't model it, so it stays opaque.
+	if !strings.Contains(types, "Payload json.RawMessage") && !strings.Contains(types, "Payload *json.RawMessage") {
+		t.Errorf("oneOf should remain json.RawMessage:\n%s", mustFile(res, "types.go"))
 	}
 }
 

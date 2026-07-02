@@ -1,6 +1,9 @@
 package validation
 
-import "reflect"
+import (
+	"reflect"
+	"strconv"
+)
 
 type SchemaConstraints struct {
 	Format    string
@@ -62,7 +65,7 @@ func ConstraintsForField(f reflect.StructField, schemaType string) (SchemaConstr
 		case RuleOneOf:
 			constraints.Enum = make([]any, len(rule.List))
 			for i, p := range rule.List {
-				constraints.Enum[i] = p
+				constraints.Enum[i] = coerceEnumValue(p, schemaType)
 			}
 		case RuleEmail:
 			if constraints.Format == "" {
@@ -79,4 +82,22 @@ func ConstraintsForField(f reflect.StructField, schemaType string) (SchemaConstr
 		}
 	}
 	return constraints, nil
+}
+
+// coerceEnumValue types an oneof value to match the schema so the emitted
+// OpenAPI enum is consistent with the field's type (e.g. an integer field
+// yields enum [1,2,3], not ["1","2","3"]). Non-numeric values on a numeric
+// schema fall back to the raw string rather than being dropped.
+func coerceEnumValue(v, schemaType string) any {
+	switch schemaType {
+	case "integer":
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+			return n
+		}
+	case "number":
+		if n, err := strconv.ParseFloat(v, 64); err == nil {
+			return n
+		}
+	}
+	return v
 }

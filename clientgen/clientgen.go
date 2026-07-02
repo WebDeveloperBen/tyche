@@ -186,20 +186,38 @@ func emitStruct(b *strings.Builder, s *structType) {
 }
 
 func emitEnum(b *strings.Builder, e *enumType) {
+	base := e.Base
+	if base == "" {
+		base = "string"
+	}
 	if e.Doc != "" {
 		fmt.Fprintf(b, "// %s: %s\n", e.Name, e.Doc)
 	}
-	fmt.Fprintf(b, "type %s string\n\n", e.Name)
+	fmt.Fprintf(b, "type %s %s\n\n", e.Name, base)
 	if len(e.Values) == 0 {
 		return
 	}
 	b.WriteString("const (\n")
 	constTaken := map[string]bool{}
 	for _, v := range e.Values {
-		constName := uniqueName(e.Name+exportedName(v), constTaken)
-		fmt.Fprintf(b, "\t%s %s = %q\n", constName, e.Name, v)
+		if base == "string" {
+			constName := uniqueName(e.Name+exportedName(v), constTaken)
+			fmt.Fprintf(b, "\t%s %s = %q\n", constName, e.Name, v)
+			continue
+		}
+		constName := uniqueName(e.Name+intEnumSuffix(v), constTaken)
+		fmt.Fprintf(b, "\t%s %s = %s\n", constName, e.Name, v)
 	}
 	b.WriteString(")\n\n")
+}
+
+// intEnumSuffix turns an integer literal into an identifier-safe constant-name
+// suffix: "3" -> "3" (valid after the enum name), "-1" -> "Neg1".
+func intEnumSuffix(v string) string {
+	if strings.HasPrefix(v, "-") {
+		return "Neg" + v[1:]
+	}
+	return v
 }
 
 func isNilable(goType string) bool {

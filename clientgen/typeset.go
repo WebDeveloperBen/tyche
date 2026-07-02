@@ -3,6 +3,7 @@ package clientgen
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -35,7 +36,10 @@ type structType struct {
 }
 
 type enumType struct {
-	Name   string
+	Name string
+	// Base is the underlying Go type: "string" or an integer type
+	// ("int"/"int32"/"int64"). It drives how values are rendered as constants.
+	Base   string
 	Values []string
 	Doc    string
 }
@@ -77,9 +81,21 @@ func (ts *typeSet) goType(s *Schema, ctx string) string {
 		return "json.RawMessage"
 	}
 
-	// Composition is not modeled in V1; treat as opaque.
-	if len(s.AllOf) > 0 || len(s.OneOf) > 0 || len(s.AnyOf) > 0 {
-		ts.note("schema composition (allOf/oneOf/anyOf) at %s emitted as json.RawMessage", ctx)
+	// oneOf/anyOf are unions, which Go doesn't model naturally — keep opaque.
+	if len(s.OneOf) > 0 || len(s.AnyOf) > 0 {
+		ts.note("oneOf/anyOf composition at %s emitted as json.RawMessage", ctx)
+		return "json.RawMessage"
+	}
+	// allOf composing objects is merged into a single struct; a lone member
+	// (e.g. allOf:[{$ref}] used to attach a description) is unwrapped.
+	if len(s.AllOf) > 0 {
+		if merged, ok := ts.flattenAllOf(s, nil); ok {
+			return ts.namedStruct(merged, ctx)
+		}
+		if len(s.AllOf) == 1 && len(s.Properties) == 0 {
+			return ts.goType(s.AllOf[0], ctx)
+		}
+		ts.note("allOf composition at %s is not a mergeable object; emitted as json.RawMessage", ctx)
 		return "json.RawMessage"
 	}
 
@@ -91,6 +107,8 @@ func (ts *typeSet) goType(s *Schema, ctx string) string {
 	case s.Type == "object" || s.AdditionalProperties != nil:
 		return ts.mapType(s, ctx)
 	case s.Type == "string" && len(s.Enum) > 0:
+		return ts.namedEnum(s, ctx)
+	case s.Type == "integer" && len(s.Enum) > 0:
 		return ts.namedEnum(s, ctx)
 	case s.Type == "string":
 		return stringType(s.Format)
@@ -168,14 +186,118 @@ func (ts *typeSet) namedEnum(s *Schema, ctx string) string {
 	name = uniqueName(name, ts.taken)
 	ts.byKey[key] = name
 
+	base := "string"
+	if s.Type == "integer" {
+		base = integerType(s.Format)
+	}
 	values := make([]string, 0, len(s.Enum))
 	for _, v := range s.Enum {
-		if str, ok := v.(string); ok {
-			values = append(values, str)
+		if lit, ok := enumLiteral(v, base); ok {
+			values = append(values, lit)
 		}
 	}
-	ts.enums = append(ts.enums, &enumType{Name: name, Values: values, Doc: strings.TrimSpace(s.Description)})
+	ts.enums = append(ts.enums, &enumType{Name: name, Base: base, Values: values, Doc: strings.TrimSpace(s.Description)})
 	return name
+}
+
+// enumLiteral renders an enum value for a Go constant of the given base type.
+// For string enums it returns the raw string (quoted at emit time); for integer
+// enums it returns the integer literal. The bool is false when the value can't
+// be represented (e.g. a non-integer in an integer enum), so it's skipped.
+func enumLiteral(v any, base string) (string, bool) {
+	if base == "string" {
+		s, ok := v.(string)
+		return s, ok
+	}
+	switch n := v.(type) {
+	case float64:
+		return strconv.FormatInt(int64(n), 10), true
+	case int64:
+		return strconv.FormatInt(n, 10), true
+	case int:
+		return strconv.Itoa(n), true
+	case string:
+		if _, err := strconv.ParseInt(n, 10, 64); err == nil {
+			return n, true
+		}
+	}
+	return "", false
+}
+
+// flattenAllOf merges an allOf composition into a single synthetic object
+// schema: the union of every member's properties and required lists, resolving
+// $ref members and recursing into nested allOf. It returns (merged, true) only
+// when the composition is cleanly an object — a member that is a scalar, array,
+// map, enum, or oneOf/anyOf makes it non-mergeable and yields (nil, false), so
+// the caller falls back to json.RawMessage. On a property-name collision the
+// first member wins.
+func (ts *typeSet) flattenAllOf(s *Schema, seen map[*Schema]bool) (*Schema, bool) {
+	if seen == nil {
+		seen = map[*Schema]bool{}
+	}
+	merged := &Schema{Type: "object", Properties: map[string]*Schema{}, Description: strings.TrimSpace(s.Description)}
+	reqSeen := map[string]bool{}
+	addReq := func(names []string) {
+		for _, r := range names {
+			if !reqSeen[r] {
+				reqSeen[r] = true
+				merged.Required = append(merged.Required, r)
+			}
+		}
+	}
+	addProps := func(props map[string]*Schema) {
+		for name, ps := range props {
+			if _, exists := merged.Properties[name]; !exists {
+				merged.Properties[name] = ps
+			}
+		}
+	}
+
+	// allOf may coexist with the schema's own inline properties.
+	addProps(s.Properties)
+	addReq(s.Required)
+
+	for _, sub := range s.AllOf {
+		sub = ts.doc.resolve(sub)
+		if sub == nil {
+			continue
+		}
+		if seen[sub] {
+			return nil, false // ref cycle
+		}
+		seen[sub] = true
+		ok := func() bool {
+			switch {
+			case len(sub.OneOf) > 0 || len(sub.AnyOf) > 0 || len(sub.Enum) > 0:
+				return false
+			case len(sub.AllOf) > 0:
+				nested, ok := ts.flattenAllOf(sub, seen)
+				if !ok {
+					return false
+				}
+				addProps(nested.Properties)
+				addReq(nested.Required)
+			case len(sub.Properties) > 0:
+				addProps(sub.Properties)
+				addReq(sub.Required)
+			case sub.Type == "object" && sub.AdditionalProperties == nil:
+				addReq(sub.Required) // empty object contributes nothing but required
+			default:
+				return false // scalar, array, or free-form map
+			}
+			return true
+		}()
+		delete(seen, sub)
+		if !ok {
+			return nil, false
+		}
+	}
+
+	if len(merged.Properties) == 0 {
+		return nil, false
+	}
+	sort.Strings(merged.Required)
+	return merged, true
 }
 
 func (ts *typeSet) note(format string, args ...any) {
@@ -199,7 +321,15 @@ func (ts *typeSet) canonical(s *Schema, seen map[*Schema]bool) string {
 	defer delete(seen, s)
 
 	switch {
-	case len(s.AllOf) > 0 || len(s.OneOf) > 0 || len(s.AnyOf) > 0:
+	case len(s.OneOf) > 0 || len(s.AnyOf) > 0:
+		return "composite"
+	case len(s.AllOf) > 0:
+		if merged, ok := ts.flattenAllOf(s, nil); ok {
+			return ts.canonical(merged, seen)
+		}
+		if len(s.AllOf) == 1 && len(s.Properties) == 0 {
+			return ts.canonical(s.AllOf[0], seen)
+		}
 		return "composite"
 	case len(s.Properties) > 0:
 		names := make([]string, 0, len(s.Properties))
@@ -231,13 +361,13 @@ func (ts *typeSet) canonical(s *Schema, seen map[*Schema]bool) string {
 			return "map<" + ts.canonical(s.AdditionalProperties.Schema, seen) + ">"
 		}
 		return "raw"
-	case s.Type == "string" && len(s.Enum) > 0:
+	case (s.Type == "string" || s.Type == "integer") && len(s.Enum) > 0:
 		vals := make([]string, 0, len(s.Enum))
 		for _, v := range s.Enum {
 			vals = append(vals, fmt.Sprint(v))
 		}
 		sort.Strings(vals)
-		return "enum:string:[" + strings.Join(vals, "|") + "]"
+		return "enum:" + s.Type + ":[" + strings.Join(vals, "|") + "]"
 	default:
 		return "scalar:" + s.Type + "/" + s.Format
 	}
