@@ -293,6 +293,17 @@ func loadPackageRoutes(pkg *packages.Package) ([]RouteSpec, error) {
 			return true
 		})
 	}
+	// Typed routes registered in package main cannot use generated codecs: Go's
+	// runtime reports "main" as the reflect PkgPath for main-package types,
+	// while servergen keys codecs by the full import path, so the two never
+	// match and Register would panic at runtime. Fail loudly at generate time
+	// with an actionable message instead.
+	if len(routes) > 0 && pkg.Name == "main" {
+		return nil, fmt.Errorf(
+			"package main (%s) registers typed routes (e.g. %s %s): move the route registrations and their input/output types into a non-main package — Go reports \"main\" as the reflect PkgPath for main-package types, so a generated codec's type keys can never match and Register fails at runtime",
+			pkg.PkgPath, routes[0].Method, routes[0].Path,
+		)
+	}
 	return routes, nil
 }
 

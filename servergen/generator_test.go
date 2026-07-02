@@ -103,6 +103,16 @@ func TestLoadRoutes(t *testing.T) {
 	}
 }
 
+func TestLoadRoutes_RejectsMainPackageRoutes(t *testing.T) {
+	_, err := servergen.LoadRoutes([]string{"./testdata/mainpkg"})
+	if err == nil {
+		t.Fatal("expected an error for typed routes registered in package main")
+	}
+	if !strings.Contains(err.Error(), "package main") {
+		t.Fatalf("expected an actionable package main error, got: %v", err)
+	}
+}
+
 func TestCleanupGeneratedFiles(t *testing.T) {
 	tmpDir := t.TempDir()
 	keepPath := filepath.Join(tmpDir, "keep", servergen.GeneratedFilename)
