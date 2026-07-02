@@ -543,18 +543,21 @@ func writeWriteBody(buf *bytes.Buffer, route RouteSpec) {
 		return
 	}
 	if route.OutputWrite.BodyFieldName != "" {
-		buf.WriteString("\t\t\treturn serverpkg.WriteJSON(w, status, out." + route.OutputWrite.BodyFieldName + ")\n")
+		buf.WriteString("\t\t\treturn serverpkg.WriteSuccess(w, status, out." + route.OutputWrite.BodyFieldName + ")\n")
 		return
 	}
-	buf.WriteString("\t\t\treturn serverpkg.WriteJSON(w, status, out)\n")
+	buf.WriteString("\t\t\treturn serverpkg.WriteSuccess(w, status, out)\n")
 }
 
 func writeGeneratedOutputBody(buf *bytes.Buffer, body *OutputBodySpec, staticStatus int) {
 	buf.WriteString("\t\t\tbufPtr := serverpkg.AcquireGeneratedJSONBuffer()\n")
 	buf.WriteString("\t\t\tdefer serverpkg.ReleaseGeneratedJSONBuffer(bufPtr)\n")
 	buf.WriteString("\t\t\tb := (*bufPtr)[:0]\n")
+	// Open the {"data": …} success envelope that the OpenAPI spec, the
+	// reflection path (WriteSuccess), and the generated client all agree on.
+	buf.WriteString("\t\t\tb = append(b, " + strconv.Quote(`{"data":{`) + "...)\n")
 	for i, field := range body.Fields {
-		prefix := `{"` + field.JSONName + `":`
+		prefix := `"` + field.JSONName + `":`
 		if i > 0 {
 			prefix = `,"` + field.JSONName + `":`
 		}
@@ -570,7 +573,8 @@ func writeGeneratedOutputBody(buf *bytes.Buffer, body *OutputBodySpec, staticSta
 		}
 		writeAppendJSONValue(buf, valueExpr, field.Kind, "\t\t\t")
 	}
-	buf.WriteString("\t\t\tb = append(b, '}', '\\n')\n")
+	// Close the body object and the envelope.
+	buf.WriteString("\t\t\tb = append(b, '}', '}', '\\n')\n")
 	buf.WriteString("\t\t\tw.Header().Set(\"Content-Type\", \"application/json\")\n")
 	if staticStatus > 0 && body.HasSimpleStatus {
 		buf.WriteString("\t\t\tw.WriteHeader(" + strconv.Itoa(staticStatus) + ")\n")

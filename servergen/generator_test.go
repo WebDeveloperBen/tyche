@@ -171,6 +171,13 @@ func TestGeneratePackageManifest(t *testing.T) {
 		`OperationID: "unsupported-thing"`,
 		`OperationID: "flat-thing"`,
 		`HasGeneratedCodec: false`,
+		// Success responses must be wrapped in the {"data": …} envelope that
+		// the OpenAPI spec, servertest.DecodeData, and the generated client all
+		// expect. The hand-built body path opens the envelope directly...
+		`{\"data\":{`,
+		// ...and the opaque-body path routes through WriteSuccess (enveloped),
+		// never the raw WriteJSON.
+		"serverpkg.WriteSuccess(w, status, out.Body)",
 	} {
 		if !strings.Contains(text, expected) {
 			t.Fatalf("expected generated output to contain %q\n%s", expected, text)
@@ -178,6 +185,11 @@ func TestGeneratePackageManifest(t *testing.T) {
 	}
 	if strings.Contains(text, "serverpkg.ParseRequest[GetThingRequest](req)") {
 		t.Fatalf("expected sample route to use generated parse path, got fallback\n%s", text)
+	}
+	// Guard against regressing to an un-enveloped success body: generated
+	// codecs must not write responses via the raw WriteJSON helper.
+	if strings.Contains(text, "serverpkg.WriteJSON(") {
+		t.Fatalf("generated codecs must emit the {\"data\":…} envelope via WriteSuccess, not raw WriteJSON\n%s", text)
 	}
 	if strings.Contains(text, `RegisterGeneratedCodec(serverpkg.GeneratedRouteMeta{
 		PackagePath: "github.com/webdeveloperben/tyche/servergen/testdata/samplepkg",
