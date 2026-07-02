@@ -49,24 +49,6 @@ func GeneratedRouteManifest() []GeneratedRouteMeta {
 	return append([]GeneratedRouteMeta(nil), generatedManifestRegistry.routes...)
 }
 
-func generatedRouteMeta(op Operation, inputType, outputType reflect.Type) (GeneratedRouteMeta, bool) {
-	generatedManifestRegistry.mu.RLock()
-	defer generatedManifestRegistry.mu.RUnlock()
-
-	inputKey := GeneratedTypeKey(inputType)
-	outputKey := GeneratedTypeKey(outputType)
-	for _, route := range generatedManifestRegistry.routes {
-		if route.OperationID == op.OperationID &&
-			route.Method == op.Method &&
-			route.Path == op.Path &&
-			(route.InputTypeKey == "" || route.InputTypeKey == inputKey) &&
-			(route.OutputTypeKey == "" || route.OutputTypeKey == outputKey) {
-			return route, true
-		}
-	}
-	return GeneratedRouteMeta{}, false
-}
-
 func generatedRouteIdentity(route GeneratedRouteMeta) string {
 	return route.PackagePath + "|" + route.OperationID + "|" + route.Method + "|" + route.Path + "|" + route.InputTypeKey + "|" + route.OutputTypeKey
 }

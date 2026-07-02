@@ -89,18 +89,30 @@ func RegisterE[I, O any](grp RouteTarget, op Operation, handler TypedHandler[I, 
 			return fmt.Errorf("duplicate operation ID: %s", op.OperationID)
 		}
 	}
-	codec, hasCodec := generatedCodec(resolvedOp, inputType, outputType)
-	if !hasCodec {
-		if meta, ok := generatedRouteMeta(resolvedOp, inputType, outputType); ok && !meta.HasGeneratedCodec {
-			return fmt.Errorf("servergen does not yet support a zero-overhead codec for operation: %s", op.OperationID)
-		}
-		return fmt.Errorf("missing generated codec for operation: %s (run servergen)", op.OperationID)
-	}
-
 	outputSpec := cloneOutputSpec(getOutputSpec[O]())
 
 	if op.DefaultStatus != 0 && outputSpec.defaultStatus == http.StatusOK {
 		outputSpec.defaultStatus = op.DefaultStatus
+	}
+
+	codec, hasCodec := generatedCodec(resolvedOp, inputType, outputType)
+	if !hasCodec {
+		// No generated codec (servergen not run, or this route shape isn't yet
+		// supported by codegen): fall back to the reflection binder so the route
+		// works during development. Generated codecs remain a zero-reflection
+		// optimization for production — run servergen to get them.
+		codec = GeneratedRouteCodec{
+			Parse: func(req *http.Request) (any, error) {
+				in, err := ParseRequest[I](req)
+				if err != nil {
+					return nil, err
+				}
+				return in, nil
+			},
+			Write: func(w http.ResponseWriter, req *http.Request, value any) error {
+				return writeReflectionResponse(w, req, value, outputSpec)
+			},
+		}
 	}
 
 	httpHandler := func(w http.ResponseWriter, req *http.Request) error {
@@ -344,6 +356,51 @@ func ParseRequest[I any](req *http.Request) (*I, error) {
 	}
 
 	return value.Interface().(*I), nil
+}
+
+// writeReflectionResponse writes a typed output using the output spec derived
+// by reflection, mirroring what a generated codec produces: it applies the
+// status (from a Status field or the default), sets response headers, and wraps
+// the body in the {"data": …} success envelope. It is the write half of the
+// no-codegen fallback used by RegisterE.
+func writeReflectionResponse(w http.ResponseWriter, req *http.Request, value any, spec *outputSpec) error {
+	rv := reflect.ValueOf(value)
+	if !rv.IsValid() || (rv.Kind() == reflect.Pointer && rv.IsNil()) {
+		w.WriteHeader(http.StatusNoContent)
+		return nil
+	}
+	outVal := reflect.Indirect(rv)
+
+	status := spec.defaultStatus
+	if spec.statusIndex >= 0 && outVal.Kind() == reflect.Struct {
+		f := outVal.Field(spec.statusIndex)
+		if f.CanInt() {
+			if s := int(f.Int()); s != 0 {
+				status = s
+			}
+		}
+	}
+
+	for _, h := range spec.headers {
+		v, ok, err := h.get(outVal)
+		if err != nil {
+			return err
+		}
+		if ok {
+			w.Header().Set(h.name, v)
+		}
+	}
+
+	if spec.noBody || statusMustNotHaveBody(status) {
+		w.WriteHeader(status)
+		return nil
+	}
+	if req != nil && req.Method == http.MethodHead {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		return nil
+	}
+	return WriteSuccess(w, status, spec.bodyValue(outVal))
 }
 
 func WriteJSON(w http.ResponseWriter, status int, v any) error {

@@ -582,25 +582,35 @@ func TestRegister_DuplicateOperationIDPanics(t *testing.T) {
 	})
 }
 
-func TestRegister_RequireGeneratedCodecPanicsWhenMissing(t *testing.T) {
-	// Register always requires a generated codec and fails explicitly when one
-	// is missing (no reflection fallback).
+func TestRegister_ReflectionFallbackWhenNoCodec(t *testing.T) {
+	// With no generated codec, Register falls back to the reflection binder so
+	// the route still works during development — binding the input and writing
+	// the {"data": …} envelope just like a generated codec would.
 	router := server.NewAPI(server.NewServeMuxAdapter())
 	api := router.Group("/api")
 
-	defer func() {
-		if recover() == nil {
-			t.Fatal("expected missing generated codec to panic")
-		}
-	}()
-
 	server.Register(api, server.Operation{
-		OperationID: "missing-generated",
+		OperationID: "reflection-user",
 		Method:      http.MethodGet,
-		Path:        "/users/:id",
-	}, func(ctx context.Context, in *getUserInput) (*getUserOutput, error) {
-		return &getUserOutput{}, nil
+		Path:        "/reflect/users/:id",
+	}, func(_ context.Context, in *getUserInput) (*getUserOutput, error) {
+		return &getUserOutput{Name: "user-" + in.ID, Email: "u@example.com"}, nil
 	})
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/reflect/users/42", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("reflection fallback: status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		Data getUserOutput `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("reflection fallback: decode envelope: %v (body %s)", err, rec.Body.String())
+	}
+	if resp.Data.Name != "user-42" {
+		t.Fatalf("reflection fallback: data.name = %q, want %q", resp.Data.Name, "user-42")
+	}
 }
 
 func TestRegister_ErrorResponseMatchesOpenAPIContract(t *testing.T) {
