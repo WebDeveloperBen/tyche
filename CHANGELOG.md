@@ -95,6 +95,39 @@
   415 for unsupported `Content-Type`; JSON and SSE responses return 406 when
   the request `Accept` header does not allow the produced media type.
 
+## [2.0.0](https://github.com/WebDeveloperBen/tyche/compare/v1.1.1...v2.0.0) (2026-07-03)
+
+
+### ⚠ BREAKING CHANGES
+
+* unify CLI as tyche and add tyche.json config
+
+### Features
+
+* add codex interface for typed errors and response parsing ([af90d80](https://github.com/WebDeveloperBen/tyche/commit/af90d801f1ffac9ca7d72b311dd0b4b641fcb0d5))
+* add multipart support implementation in servergen ([f04cdcf](https://github.com/WebDeveloperBen/tyche/commit/f04cdcf0dedebebc66beb56f8f1f9b310e6c84f7))
+* add typed multipart support ([19f1977](https://github.com/WebDeveloperBen/tyche/commit/19f197779c5cb45d0764567ccb9354fa1bd584a5))
+* clean up typegen for clientgen ([38dadc7](https://github.com/WebDeveloperBen/tyche/commit/38dadc71050ea24e1aeb2169a155166b22d8b821))
+* create type naming strategies for client genearted code ([7e03534](https://github.com/WebDeveloperBen/tyche/commit/7e035344009072de564a18078e17a20733682bc1))
+* generate request support from input fields ([4ea9505](https://github.com/WebDeveloperBen/tyche/commit/4ea950571d368ad13c732bd957acc16432ec648d))
+* strengthen typed runtime of text event streams ([3adde76](https://github.com/WebDeveloperBen/tyche/commit/3adde76ca93b81bb818c221d60e17a1d398caff6))
+* unify CLI as tyche and add tyche.json config ([1cb3ad8](https://github.com/WebDeveloperBen/tyche/commit/1cb3ad847d3c9d13eb0109e8fb7426c5589fa5e8))
+
+
+### Bug Fixes
+
+* all responses aren't now typed as json ([14c8019](https://github.com/WebDeveloperBen/tyche/commit/14c8019199c486da17cc643f387c6bdba76e837e))
+* all types to be created in main ([d00cc61](https://github.com/WebDeveloperBen/tyche/commit/d00cc6175a80b3c3407a5d6c2ebf131524ee2fa5))
+* clean up plugin middleware register ([b848ff9](https://github.com/WebDeveloperBen/tyche/commit/b848ff906f5b15fa4e63c049f3eace60218f0638))
+* contract break in generated code ([84337dc](https://github.com/WebDeveloperBen/tyche/commit/84337dc44813a5cafd0a9227aae97d1a5b4ce9dc))
+* devtooling flow ([a017348](https://github.com/WebDeveloperBen/tyche/commit/a0173485aa0380ef1a19038174076f2f7f3028f1))
+* harden CLI error handling and output after refactor review ([8dd802e](https://github.com/WebDeveloperBen/tyche/commit/8dd802ef11c8a91217426b378406f833ddc9dfee))
+* linting and add commands to taskfile to run easily ([f684bbc](https://github.com/WebDeveloperBen/tyche/commit/f684bbc86b28efe060e09e7f3481f48015438c96))
+* reg bug ([603e460](https://github.com/WebDeveloperBen/tyche/commit/603e460b23439e8a65700d89eac01a6be8979a1a))
+* typegen ([61f88ad](https://github.com/WebDeveloperBen/tyche/commit/61f88ade0ded548b91a9d803f2d4150265640166))
+* update memory footprint of structs ([08a82b4](https://github.com/WebDeveloperBen/tyche/commit/08a82b48d10caeeb5dfa6897b5271836947f3571))
+* ws forwarding bug ([1764584](https://github.com/WebDeveloperBen/tyche/commit/1764584310aabadebcc943761e637a0a2b32be7c))
+
 ## [1.1.1](https://github.com/WebDeveloperBen/tyche/compare/v1.1.0...v1.1.1) (2026-06-08)
 
 
