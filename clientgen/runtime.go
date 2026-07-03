@@ -194,7 +194,9 @@ const runtimeImports = `import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"net/url"
 	"strconv"
 	"strings"
@@ -207,6 +209,79 @@ type CLIENTTYPE struct {
 	baseURL    string
 	httpClient *http.Client
 	header     http.Header
+}
+
+// File is a single file part for multipart/form-data requests.
+type File struct {
+	Name        string
+	Content     io.Reader
+	ContentType string
+}
+
+type multipartBody struct {
+	fields []multipartField
+	files  []multipartFile
+}
+
+type multipartField struct {
+	name  string
+	value string
+}
+
+type multipartFile struct {
+	name string
+	file File
+}
+
+func (b *multipartBody) addField(name, value string) {
+	b.fields = append(b.fields, multipartField{name: name, value: value})
+}
+
+func (b *multipartBody) addFile(name string, file File) {
+	b.files = append(b.files, multipartFile{name: name, file: file})
+}
+
+func (b *multipartBody) encode() (*bytes.Buffer, string, error) {
+	buf := &bytes.Buffer{}
+	writer := multipart.NewWriter(buf)
+	for _, field := range b.fields {
+		if err := writer.WriteField(field.name, field.value); err != nil {
+			_ = writer.Close()
+			return nil, "", fmt.Errorf("encode multipart field %q: %w", field.name, err)
+		}
+	}
+	for _, file := range b.files {
+		if file.file.Content == nil {
+			_ = writer.Close()
+			return nil, "", fmt.Errorf("encode multipart file %q: nil content", file.name)
+		}
+		filename := file.file.Name
+		if filename == "" {
+			filename = "file"
+		}
+		var part io.Writer
+		var err error
+		if file.file.ContentType == "" {
+			part, err = writer.CreateFormFile(file.name, filename)
+		} else {
+			header := textproto.MIMEHeader{}
+			header.Set("Content-Disposition", fmt.Sprintf(` + "`" + `form-data; name=%q; filename=%q` + "`" + `, file.name, filename))
+			header.Set("Content-Type", file.file.ContentType)
+			part, err = writer.CreatePart(header)
+		}
+		if err != nil {
+			_ = writer.Close()
+			return nil, "", fmt.Errorf("encode multipart file %q: %w", file.name, err)
+		}
+		if _, err := io.Copy(part, file.file.Content); err != nil {
+			_ = writer.Close()
+			return nil, "", fmt.Errorf("encode multipart file %q: %w", file.name, err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		return nil, "", fmt.Errorf("encode multipart body: %w", err)
+	}
+	return buf, writer.FormDataContentType(), nil
 }
 
 // Option configures a CLIENTTYPE.
@@ -292,20 +367,38 @@ func (c *CLIENTTYPE) send(ctx context.Context, method, path string, query url.Va
 	}
 	var reader io.Reader
 	if body != nil {
-		buf, err := json.Marshal(body)
-		if err != nil {
-			return nil, fmt.Errorf("encode request body: %w", err)
+		switch typed := body.(type) {
+		case *multipartBody:
+			buf, contentType, err := typed.encode()
+			if err != nil {
+				return nil, err
+			}
+			reader = buf
+			if header == nil {
+				header = http.Header{}
+			}
+			if header.Get("Content-Type") == "" {
+				header.Set("Content-Type", contentType)
+			}
+		default:
+			buf, err := json.Marshal(body)
+			if err != nil {
+				return nil, fmt.Errorf("encode request body: %w", err)
+			}
+			reader = bytes.NewReader(buf)
+			if header == nil {
+				header = http.Header{}
+			}
+			if header.Get("Content-Type") == "" {
+				header.Set("Content-Type", "application/json")
+			}
 		}
-		reader = bytes.NewReader(buf)
 	}
 	req, err := http.NewRequestWithContext(ctx, method, u, reader)
 	if err != nil {
 		return nil, err
 	}
 	c.applyHeaders(req, header)
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
 	if req.Header.Get("Accept") == "" {
 		req.Header.Set("Accept", "application/json")
 	}

@@ -349,6 +349,10 @@ compositions of objects are merged into a single struct (keeping the component
 name), and a success response in a non-JSON media type returns `[]byte` rather
 than being decoded or dropped.
 
+Operations with `multipart/form-data` request bodies generate `form`, `file`,
+and `files` input fields. File inputs use the generated `client.File` type,
+which carries the part filename, content reader, and optional content type.
+
 By default, structurally identical schemas share one generated Go type. Use
 `--type-naming operation-scoped` when distinct operations should keep distinct
 body/output/event types even if their schemas have the same shape.

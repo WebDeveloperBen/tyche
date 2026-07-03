@@ -40,6 +40,8 @@ A dependency-free Go module that imports only the standard library:
 - request/response types (structurally deduplicated by default, or
   operation-scoped with `--type-naming operation-scoped`)
 - one method per OpenAPI operation
+- `multipart/form-data` request support via generated `form`, `file`, and
+  `files` input fields plus the generated `File` type
 - typed `application/problem+json` errors (surfaced as `*APIError`)
 - typed Server-Sent Events streaming methods for `text/event-stream` operations,
   including accessors for event name, ID, and retry metadata

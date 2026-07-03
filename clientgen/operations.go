@@ -11,7 +11,7 @@ import (
 type inputField struct {
 	GoName   string
 	WireName string // path/query/header parameter name
-	In       string // "path" | "query" | "header" | "body"
+	In       string // "path" | "query" | "header" | "body" | "form" | "file" | "files"
 	GoType   string
 	Optional bool
 }
@@ -96,6 +96,8 @@ func resolveOperation(ts *typeSet, doc *Document, path, method string, op *Opera
 				GoType:   pointerize(bodyType),
 				Optional: !op.RequestBody.Required,
 			})
+		} else if mt := op.RequestBody.Content["multipart/form-data"]; mt != nil && mt.Schema != nil {
+			o.Fields = append(o.Fields, multipartFields(ts, doc, mt.Schema, fieldTaken)...)
 		}
 	}
 
@@ -108,6 +110,49 @@ func resolveOperation(ts *typeSet, doc *Document, path, method string, op *Opera
 		o.Bytes = true
 	}
 	return o
+}
+
+func multipartFields(ts *typeSet, doc *Document, schema *Schema, fieldTaken map[string]bool) []inputField {
+	s := doc.resolve(schema)
+	if s == nil || len(s.Properties) == 0 {
+		return nil
+	}
+	required := map[string]bool{}
+	for _, name := range s.Required {
+		required[name] = true
+	}
+	names := make([]string, 0, len(s.Properties))
+	for name := range s.Properties {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	fields := make([]inputField, 0, len(names))
+	for _, name := range names {
+		prop := doc.resolve(s.Properties[name])
+		if prop == nil {
+			continue
+		}
+		f := inputField{
+			GoName:   uniqueName(exportedName(name), fieldTaken),
+			WireName: name,
+			In:       "form",
+			GoType:   ts.scalarParamType(prop),
+			Optional: !required[name],
+		}
+		if isBinarySchema(prop) {
+			f.In = "file"
+			f.GoType = "*File"
+		} else if prop.Type == "array" && isBinarySchema(doc.resolve(prop.Items)) {
+			f.In = "files"
+			f.GoType = "[]File"
+		}
+		fields = append(fields, f)
+	}
+	return fields
+}
+
+func isBinarySchema(s *Schema) bool {
+	return s != nil && s.Type == "string" && s.Format == "binary"
 }
 
 // successBytes reports whether the lowest 2xx response carries a body in a
@@ -193,6 +238,8 @@ func emitInputStruct(b *strings.Builder, o *operation) {
 		switch f.In {
 		case "body":
 			fmt.Fprintf(b, "\t%s %s `json:\"-\"`\n", f.GoName, goType)
+		case "form", "file", "files":
+			fmt.Fprintf(b, "\t%s %s `%s:%q`\n", f.GoName, goType, f.In, f.WireName)
 		default:
 			fmt.Fprintf(b, "\t%s %s `%s:%q`\n", f.GoName, goType, f.In, f.WireName)
 		}
@@ -270,8 +317,32 @@ func emitRequestBuild(b *strings.Builder, o *operation) (queryArg, headerArg, bo
 		b.WriteString("\tvar body any\n")
 		fmt.Fprintf(b, "\tif in.%s != nil {\n\t\tbody = in.%s\n\t}\n", f.GoName, f.GoName)
 		bodyArg = "body"
+	} else if hasMultipartFields(o.Fields) {
+		b.WriteString("\tbody := &multipartBody{}\n")
+		for _, f := range o.Fields {
+			switch f.In {
+			case "form":
+				emitMultipartFieldSet(b, f)
+			case "file":
+				fmt.Fprintf(b, "\tif in.%s != nil {\n\t\tbody.addFile(%q, *in.%s)\n\t}\n", f.GoName, f.WireName, f.GoName)
+			case "files":
+				fmt.Fprintf(b, "\tfor _, file := range in.%s {\n\t\tbody.addFile(%q, file)\n\t}\n", f.GoName, f.WireName)
+			}
+		}
+		bodyArg = "body"
 	}
 	return queryArg, headerArg, bodyArg
+}
+
+func emitMultipartFieldSet(b *strings.Builder, f inputField) {
+	switch {
+	case f.isSlice():
+		fmt.Fprintf(b, "\tfor _, v := range in.%s {\n\t\tbody.addField(%q, fmtParam(v))\n\t}\n", f.GoName, f.WireName)
+	case f.Optional:
+		fmt.Fprintf(b, "\tif in.%s != nil {\n\t\tbody.addField(%q, fmtParam(*in.%s))\n\t}\n", f.GoName, f.WireName, f.GoName)
+	default:
+		fmt.Fprintf(b, "\tbody.addField(%q, fmtParam(in.%s))\n", f.WireName, f.GoName)
+	}
 }
 
 func emitParamSet(b *strings.Builder, target string, f inputField) {
@@ -337,6 +408,15 @@ func anyIn(fields []inputField, in string) bool {
 func hasStreaming(ops []*operation) bool {
 	for _, o := range ops {
 		if o.Stream {
+			return true
+		}
+	}
+	return false
+}
+
+func hasMultipartFields(fields []inputField) bool {
+	for _, f := range fields {
+		if f.In == "form" || f.In == "file" || f.In == "files" {
 			return true
 		}
 	}

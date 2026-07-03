@@ -76,6 +76,19 @@ const sampleSpec = `{
         "operationId": "download-report",
         "responses": {"200": {"description": "pdf", "content": {"application/pdf": {"schema": {"type": "string", "format": "binary"}}}}}
       }
+    },
+    "/uploads": {
+      "post": {
+        "operationId": "upload-avatar",
+        "requestBody": {"required": true, "content": {"multipart/form-data": {"schema": {"type": "object", "properties": {
+          "title": {"type": "string"},
+          "count": {"type": "integer"},
+          "tags": {"type": "array", "items": {"type": "string"}},
+          "avatar": {"type": "string", "format": "binary"},
+          "docs": {"type": "array", "items": {"type": "string", "format": "binary"}}
+        }, "required": ["title", "count", "avatar"]}}}},
+        "responses": {"200": {"description": "ok", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"type": "object", "properties": {"ok": {"type": "boolean"}}, "required": ["ok"]}}}}}}}
+      }
     }
   },
   "components": {"schemas": {}}
@@ -125,6 +138,7 @@ func TestGenerate_ExpectedFilesAndSymbols(t *testing.T) {
 		"func (c *Client) DisableUser(ctx context.Context, in *DisableUserInput, opts ...CallOption) error",                 // 204 -> error only
 		"func (c *Client) DownloadReport(ctx context.Context, in *DownloadReportInput, opts ...CallOption) ([]byte, error)", // non-JSON body -> []byte
 		"func (c *Client) StreamEvents(ctx context.Context, in *StreamEventsInput, opts ...CallOption) (*Stream[StreamEventsEvent], error)",
+		"func (c *Client) UploadAvatar(ctx context.Context, in *UploadAvatarInput, opts ...CallOption) (*UploadAvatarOutput, error)",
 		"return doStream[StreamEventsEvent](ctx, c, http.MethodGet,",
 		"opts)\n", // opts threaded to the helper call
 		`url.PathEscape(fmtParam(in.ID))`,
@@ -143,6 +157,11 @@ func TestGenerate_ExpectedFilesAndSymbols(t *testing.T) {
 	for _, want := range []string{
 		"Since *time.Time",
 		"Body *json.RawMessage",
+		"Avatar *File `file:\"avatar\"`",
+		"Docs []File `files:\"docs\"`",
+		"Title string `form:\"title\"`",
+		"body.addField(\"title\", fmtParam(in.Title))",
+		"body.addFile(\"avatar\", *in.Avatar)",
 		"func (c *Client) PutBlob(ctx context.Context, in *PutBlobInput, opts ...CallOption) error",
 	} {
 		if !strings.Contains(nops, want) {
@@ -347,7 +366,8 @@ const runtimeSpec = `{
   "paths": {
     "/ping": {"get": {"operationId": "ping", "responses": {"200": {"description": "ok", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"type": "object", "properties": {"pong": {"type": "boolean"}, "count": {"type": "integer", "format": "int64"}}, "required": ["pong", "count"]}}}}}}}}},
     "/boom": {"get": {"operationId": "boom", "responses": {"200": {"description": "ok", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"type": "object", "properties": {"x": {"type": "string"}}}}}}}}}}},
-    "/stream": {"get": {"operationId": "stream-events", "responses": {"200": {"description": "s", "content": {"text/event-stream": {"schema": {"type": "object", "properties": {"message": {"type": "string"}}, "required": ["message"]}}}}}}}
+    "/stream": {"get": {"operationId": "stream-events", "responses": {"200": {"description": "s", "content": {"text/event-stream": {"schema": {"type": "object", "properties": {"message": {"type": "string"}}, "required": ["message"]}}}}}}},
+    "/upload": {"post": {"operationId": "upload-avatar", "requestBody": {"required": true, "content": {"multipart/form-data": {"schema": {"type": "object", "properties": {"title": {"type": "string"}, "count": {"type": "integer"}, "tags": {"type": "array", "items": {"type": "string"}}, "avatar": {"type": "string", "format": "binary"}, "docs": {"type": "array", "items": {"type": "string", "format": "binary"}}}, "required": ["title", "count", "avatar"]}}}}, "responses": {"200": {"description": "ok", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"type": "object", "properties": {"ok": {"type": "boolean"}}, "required": ["ok"]}}}}}}}}}
   },
   "components": {"schemas": {}}
 }`
@@ -358,6 +378,7 @@ const runtimeSpec = `{
 const runtimeHarness = `package client
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"net/http"
@@ -394,6 +415,32 @@ func TestRuntimeBehavior(t *testing.T) {
 		for _, m := range []string{"b", "c"} {
 			_, _ = w.Write([]byte("data: {\"message\":\"" + m + "\"}\n\n"))
 			f.Flush()
+		}
+	})
+	mux.HandleFunc("/upload", func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data;") {
+			t.Errorf("expected multipart content type, got %q", r.Header.Get("Content-Type"))
+		}
+		if err := r.ParseMultipartForm(32 << 20); err != nil {
+			t.Errorf("ParseMultipartForm: %v", err)
+			w.WriteHeader(400)
+			return
+		}
+		avatar := r.MultipartForm.File["avatar"]
+		docs := r.MultipartForm.File["docs"]
+		ok := r.FormValue("title") == "portrait" &&
+			r.FormValue("count") == "7" &&
+			len(r.MultipartForm.Value["tags"]) == 2 &&
+			len(avatar) == 1 &&
+			avatar[0].Filename == "me.txt" &&
+			avatar[0].Header.Get("Content-Type") == "text/plain" &&
+			len(docs) == 1 &&
+			docs[0].Filename == "doc.txt"
+		w.Header().Set("Content-Type", "application/json")
+		if ok {
+			_, _ = w.Write([]byte("{\"data\":{\"ok\":true}}"))
+		} else {
+			_, _ = w.Write([]byte("{\"data\":{\"ok\":false}}"))
 		}
 	})
 	srv := httptest.NewServer(mux)
@@ -460,6 +507,20 @@ func TestRuntimeBehavior(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), ` + "`" + `text/event-stream` + "`" + `) || !strings.Contains(err.Error(), ` + "`" + `application/json` + "`" + `) {
 		t.Fatalf("unexpected content-type error: %v", err)
+	}
+
+	upload, err := c.UploadAvatar(context.Background(), &UploadAvatarInput{
+		Avatar: &File{Name: "me.txt", Content: strings.NewReader("avatar"), ContentType: "text/plain"},
+		Count: 7,
+		Docs: []File{{Name: "doc.txt", Content: bytes.NewBufferString("doc")}},
+		Tags: []string{"profile", "public"},
+		Title: "portrait",
+	})
+	if err != nil {
+		t.Fatalf("UploadAvatar: %v", err)
+	}
+	if !upload.Ok {
+		t.Fatalf("multipart upload was not encoded as expected")
 	}
 }
 `
