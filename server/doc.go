@@ -15,6 +15,8 @@
 //     not-found / method-not-allowed handlers.
 //   - Per-route request body limits (WithMaxBodyBytes) and mounting of arbitrary
 //     http.Handlers (Mount).
+//   - Pluggable typed-route codecs (APIConfig.Codecs) with per-route request
+//     and response restrictions (WithRequestContentTypes, WithResponseContentTypes).
 //   - OpenAPI security schemes (AddSecurityScheme, BearerScheme, APIKeyScheme,
 //     BasicScheme) and per-operation security requirements (Operation.Security).
 //   - Typed request-scoped context keys (NewContextKey) and the matched route

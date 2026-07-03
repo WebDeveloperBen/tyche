@@ -194,8 +194,13 @@ func TestGeneratePackageManifest(t *testing.T) {
 		"serverpkg.RegisterGeneratedCodec(serverpkg.GeneratedRouteMeta{",
 		`raw_ID := req.PathValue("id")`,
 		`in.ID = raw_ID`,
-		"bufPtr := serverpkg.AcquireGeneratedJSONBuffer()",
-		"b = strconv.AppendQuote(b, out.Body.ID)",
+		"ParseWithCodecs: func(req *http.Request, codecs []serverpkg.Codec) (any, error)",
+		"WriteWithCodecs: func(w http.ResponseWriter, req *http.Request, value any, codecs []serverpkg.Codec) error",
+		"serverpkg.UseJSONCodecForRequest(req, codecs)",
+		"serverpkg.UseJSONCodecForResponse(req, codecs)",
+		"jsonCodec := serverpkg.JSONCodec{}",
+		"bufPtr := jsonCodec.AcquireGeneratedSuccessBuffer()",
+		"b = jsonCodec.AppendString(b, out.Body.ID)",
 		"bodyBytes, err := serverpkg.ReadRequestJSONBodyFast(req)",
 		"var decoded struct {",
 		`JoinValidationPointer(serverpkg.JoinValidationPointer("", "meta"), "code")`,
@@ -206,6 +211,7 @@ func TestGeneratePackageManifest(t *testing.T) {
 		`if err := json.Unmarshal(bodyBytes, &in.Body); err != nil`,
 		`OperationID: "get-thing"`,
 		`OperationID: "create-thing"`,
+		`ResponseContentTypes: []string{"application/json"}`,
 		`OperationID: "bulk-create-thing"`,
 		`OperationID: "unsupported-thing"`,
 		`OperationID: "flat-thing"`,
@@ -217,9 +223,9 @@ func TestGeneratePackageManifest(t *testing.T) {
 		// the OpenAPI spec, servertest.DecodeData, and the generated client all
 		// expect. The hand-built body path opens the envelope directly...
 		`{\"data\":{`,
-		// ...and the opaque-body path routes through WriteSuccess (enveloped),
-		// never the raw WriteJSON.
-		"serverpkg.WriteSuccess(w, status, out.Body)",
+		// ...and the opaque-body path routes through the negotiated success
+		// helper (enveloped), never the raw WriteJSON.
+		"serverpkg.WriteSuccessWithCodecs(w, req, status, out.Body, codecs)",
 	} {
 		if !strings.Contains(text, expected) {
 			t.Fatalf("expected generated output to contain %q\n%s", expected, text)

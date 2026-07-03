@@ -26,6 +26,7 @@ type RouteTarget interface {
 	groupPrefix() string
 	apiDoc() *openapi.OpenAPI
 	apiSchemaRegistry() *openapi.Registry
+	apiCodecs() []Codec
 	apiOperations() []RegisteredOperation
 	recordOperation(RegisteredOperation)
 	invalidateOpenAPI()
@@ -52,6 +53,7 @@ type API struct {
 	rootMW               []Middleware
 	serveHTTPMiddlewares []ServeHTTPMiddleware
 	routes               []*apiRoute
+	codecs               []Codec
 	openapiJSON          []byte
 	maxBodyBytes         int64
 	openapiMu            sync.RWMutex
@@ -82,6 +84,7 @@ func NewAPI(adapter Adapter, cfg ...APIConfig) *API {
 	}
 	merged := mergeAPIConfig(APIConfig{
 		OpenAPI:             OpenAPIInfo{Title: "API", Version: "1.0.0"},
+		Codecs:              []Codec{JSONCodec{}},
 		MaxRequestBodyBytes: 10 << 20,
 	}, c)
 
@@ -92,6 +95,7 @@ func NewAPI(adapter Adapter, cfg ...APIConfig) *API {
 		methodNotAllowed: http.HandlerFunc(defaultMethodNotAllowedHandler),
 		doc:              openapi.NewOpenAPI(merged.OpenAPI.Title, merged.OpenAPI.Version),
 		schemaRegistry:   openapi.NewRegistry("#/components/schemas"),
+		codecs:           normalizeCodecs(merged.Codecs),
 		maxBodyBytes:     merged.MaxRequestBodyBytes,
 		registered:       make(map[string]struct{}),
 	}
@@ -250,6 +254,7 @@ func (a *API) handleRoute(method, opPath string, fn HandlerFunc, ro routeOptions
 func (a *API) groupPrefix() string                    { return a.root.groupPrefix() }
 func (a *API) apiDoc() *openapi.OpenAPI               { return a.doc }
 func (a *API) apiSchemaRegistry() *openapi.Registry   { return a.schemaRegistry }
+func (a *API) apiCodecs() []Codec                     { return a.Codecs() }
 func (a *API) apiOperations() []RegisteredOperation   { return a.operations }
 func (a *API) recordOperation(op RegisteredOperation) { a.operations = append(a.operations, op) }
 func (a *API) invalidateOpenAPI()                     { a.invalidateOpenAPICache() }
@@ -557,6 +562,7 @@ func (a *API) registerWithAdapter(method, path string, rt *apiRoute) (err error)
 func (g *APIGroup) groupPrefix() string                  { return g.prefix }
 func (g *APIGroup) apiDoc() *openapi.OpenAPI             { return g.api.doc }
 func (g *APIGroup) apiSchemaRegistry() *openapi.Registry { return g.api.schemaRegistry }
+func (g *APIGroup) apiCodecs() []Codec                   { return g.api.Codecs() }
 func (g *APIGroup) apiOperations() []RegisteredOperation { return g.api.operations }
 func (g *APIGroup) recordOperation(op RegisteredOperation) {
 	g.api.operations = append(g.api.operations, op)

@@ -66,8 +66,10 @@ type NamedMiddleware interface {
 // routeOptions accumulates per-route configuration supplied via [RouteOption]
 // values when registering a single route.
 type routeOptions struct {
-	maxBodyBytes *int64
-	middleware   []Middleware
+	maxBodyBytes         *int64
+	middleware           []Middleware
+	requestContentTypes  []string
+	responseContentTypes []string
 }
 
 // RouteOption customizes the registration of an individual route. Options are
@@ -102,6 +104,24 @@ func WithMaxBodyBytes(n int64) RouteOption {
 	return func(o *routeOptions) {
 		v := n
 		o.maxBodyBytes = &v
+	}
+}
+
+// WithRequestContentTypes restricts a typed route's non-multipart request body
+// codecs to the given media types. Each media type must be registered in
+// [APIConfig.Codecs]. Routes without this option allow every configured codec.
+func WithRequestContentTypes(mediaTypes ...string) RouteOption {
+	return func(o *routeOptions) {
+		o.requestContentTypes = append(o.requestContentTypes, mediaTypes...)
+	}
+}
+
+// WithResponseContentTypes restricts a typed route's successful response body
+// codecs to the given media types. Each media type must be registered in
+// [APIConfig.Codecs]. Routes without this option allow every configured codec.
+func WithResponseContentTypes(mediaTypes ...string) RouteOption {
+	return func(o *routeOptions) {
+		o.responseContentTypes = append(o.responseContentTypes, mediaTypes...)
 	}
 }
 

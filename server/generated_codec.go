@@ -1,16 +1,16 @@
 package server
 
 import (
-	"bytes"
-	"encoding/json"
 	"net/http"
 	"reflect"
 	"sync"
 )
 
 type GeneratedRouteCodec struct {
-	Parse func(*http.Request) (any, error)
-	Write func(http.ResponseWriter, *http.Request, any) error
+	Parse           func(*http.Request) (any, error)
+	Write           func(http.ResponseWriter, *http.Request, any) error
+	ParseWithCodecs func(*http.Request, []Codec) (any, error)
+	WriteWithCodecs func(http.ResponseWriter, *http.Request, any, []Codec) error
 }
 
 type generatedCodecEntry struct {
@@ -21,12 +21,6 @@ type generatedCodecEntry struct {
 var generatedCodecRegistry struct {
 	codecs []generatedCodecEntry
 	mu     sync.RWMutex
-}
-
-var encoderBufPool = sync.Pool{
-	New: func() any {
-		return &bytes.Buffer{}
-	},
 }
 
 var generatedJSONBytePool = sync.Pool{
@@ -72,38 +66,13 @@ func WriteTypedResponse[O any](w http.ResponseWriter, out *O) error {
 		w.WriteHeader(http.StatusNoContent)
 		return nil
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-
-	buf := encoderBufPool.Get().(*bytes.Buffer)
-	buf.Reset()
-
-	defer encoderBufPool.Put(buf)
-
-	enc := json.NewEncoder(buf)
-	if err := enc.Encode(DataResponse{Data: out}); err != nil {
-		return err
-	}
-
-	_, writeErr := w.Write(buf.Bytes())
-	return writeErr
+	return defaultJSONCodec.EncodeSuccess(w, http.StatusOK, out)
 }
 
 func AcquireGeneratedJSONBuffer() *[]byte {
-	buf := generatedJSONBytePool.Get().(*[]byte)
-	*buf = (*buf)[:0]
-	return buf
+	return JSONCodec{}.AcquireGeneratedSuccessBuffer()
 }
 
 func ReleaseGeneratedJSONBuffer(buf *[]byte) {
-	if buf == nil {
-		return
-	}
-	if cap(*buf) > 4096 {
-		*buf = make([]byte, 0, 256)
-	} else {
-		*buf = (*buf)[:0]
-	}
-	generatedJSONBytePool.Put(buf)
+	JSONCodec{}.ReleaseGeneratedSuccessBuffer(buf)
 }

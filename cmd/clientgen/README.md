@@ -42,6 +42,10 @@ A dependency-free Go module that imports only the standard library:
 - one method per OpenAPI operation
 - `multipart/form-data` request support via generated `form`, `file`, and
   `files` input fields plus the generated `File` type
+- a generated `Codec` interface and `WithCodec` option for non-multipart body
+  encoding and typed response decoding
+- operation-specific `Accept` headers derived from documented success response
+  media types
 - typed `application/problem+json` errors (surfaced as `*APIError`)
 - typed Server-Sent Events streaming methods for `text/event-stream` operations,
   including accessors for event name, ID, and retry metadata

@@ -889,6 +889,83 @@ func TestRegister_ErrorResponseMatchesOpenAPIContract(t *testing.T) {
 	}
 }
 
+func TestRegister_ContentNegotiation(t *testing.T) {
+	type input struct {
+		Name string `json:"name"`
+	}
+	type output struct {
+		Body struct {
+			OK bool `json:"ok"`
+		} `body:"true"`
+	}
+
+	router := server.NewAPI(server.NewServeMuxAdapter())
+	api := router.Group("/api")
+
+	server.Register(api, server.Operation{
+		OperationID: "negotiation-user",
+		Method:      http.MethodPost,
+		Path:        "/negotiation",
+	}, func(ctx context.Context, in *input) (*output, error) {
+		out := &output{}
+		out.Body.OK = in.Name != ""
+		return out, nil
+	})
+
+	t.Run("unsupported request content type is 415", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/negotiation", strings.NewReader(`{"name":"Ada"}`))
+		req.Header.Set("Content-Type", "text/plain")
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusUnsupportedMediaType {
+			t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+		}
+		if got := rec.Header().Get("Content-Type"); got != "application/problem+json" {
+			t.Fatalf("content-type = %q", got)
+		}
+	})
+
+	t.Run("unacceptable response content type is 406", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/negotiation", strings.NewReader(`{"name":"Ada"}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/xml")
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusNotAcceptable {
+			t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+		}
+		if got := rec.Header().Get("Content-Type"); got != "application/problem+json" {
+			t.Fatalf("content-type = %q", got)
+		}
+	})
+
+	t.Run("specific q=0 overrides wildcard accept", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/negotiation", strings.NewReader(`{"name":"Ada"}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json;q=0, */*;q=1")
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusNotAcceptable {
+			t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("wildcard accept allows json", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/negotiation", strings.NewReader(`{"name":"Ada"}`))
+		req.Header.Set("Content-Type", "application/json; charset=utf-8")
+		req.Header.Set("Accept", "application/*")
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+		}
+	})
+}
+
 func TestParseRequest_EnforcesRouterBodyLimit(t *testing.T) {
 	router := server.NewAPI(server.NewServeMuxAdapter(), server.APIConfig{MaxRequestBodyBytes: 8})
 	api := router.Group("/api")

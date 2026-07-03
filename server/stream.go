@@ -65,6 +65,9 @@ type EventStream struct {
 // which case no bytes are written and the caller may still produce a normal
 // error response.
 func NewEventStream(w http.ResponseWriter, r *http.Request) (*EventStream, error) {
+	if err := NegotiateResponseContentType(r, "text/event-stream"); err != nil {
+		return nil, err
+	}
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		return nil, errors.New("server: response writer does not support streaming (http.Flusher)")
@@ -300,33 +303,46 @@ func RegisterStreamE[I, O any](grp RouteTarget, op Operation, handler StreamHand
 			return fmt.Errorf("duplicate operation ID: %s", op.OperationID)
 		}
 	}
+	ro := resolveRouteOptions(opts)
+	requestCodecs, err := codecsForMediaTypes(grp.apiCodecs(), ro.requestContentTypes)
+	if err != nil {
+		return err
+	}
 
 	httpHandler := func(w http.ResponseWriter, req *http.Request) error {
-		input, err := ParseRequest[I](req)
+		input, err := parseRequestWithCodecs[I](req, requestCodecs)
 		if err != nil {
 			var validationErr *validation.Error
 			if errors.As(err, &validationErr) {
 				return validationErr
+			}
+			var httpErr HTTPError
+			if errors.As(err, &httpErr) {
+				return httpErr
 			}
 			return NewHTTPError(http.StatusBadRequest, err.Error())
 		}
 
 		es, err := NewEventStream(w, req)
 		if err != nil {
+			var httpErr HTTPError
+			if errors.As(err, &httpErr) {
+				return httpErr
+			}
 			return NewHTTPError(http.StatusInternalServerError, "streaming is not supported by this server")
 		}
 
 		return handler(req.Context(), input, &Stream[O]{es: es})
 	}
 
-	if err := grp.handleRoute(op.Method, op.Path, httpHandler, resolveRouteOptions(opts)); err != nil {
+	if err := grp.handleRoute(op.Method, op.Path, httpHandler, ro); err != nil {
 		return err
 	}
-	registerStreamOpenAPIOperation(grp, op, inputType, outputType)
+	registerStreamOpenAPIOperation(grp, op, inputType, outputType, requestCodecs)
 	return nil
 }
 
-func registerStreamOpenAPIOperation(grp RouteTarget, op Operation, inputType, outputType reflect.Type) {
+func registerStreamOpenAPIOperation(grp RouteTarget, op Operation, inputType, outputType reflect.Type, requestCodecs []Codec) {
 	doc := grp.apiDoc()
 	registry := grp.apiSchemaRegistry()
 
@@ -363,7 +379,7 @@ func registerStreamOpenAPIOperation(grp RouteTarget, op Operation, inputType, ou
 		OperationID: op.OperationID,
 		Tags:        op.Tags,
 		Parameters:  extractParameters(inputType, registry),
-		RequestBody: extractRequestBody(inputType, registry),
+		RequestBody: extractRequestBody(inputType, registry, requestCodecs),
 		Responses:   responses,
 		Deprecated:  op.Deprecated,
 		Security:    normalizeSecurityRequirements(op.Security),

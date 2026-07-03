@@ -71,6 +71,7 @@ type OpenAPIInfo struct {
 type APIConfig struct {
 	ErrorHandler        ErrorHandler
 	OpenAPI             OpenAPIInfo
+	Codecs              []Codec
 	MaxRequestBodyBytes int64
 }
 
@@ -94,6 +95,9 @@ func mergeAPIConfig(base, override APIConfig) APIConfig {
 	}
 	if override.ErrorHandler != nil {
 		base.ErrorHandler = override.ErrorHandler
+	}
+	if len(override.Codecs) > 0 {
+		base.Codecs = append(base.Codecs, override.Codecs...)
 	}
 	return base
 }

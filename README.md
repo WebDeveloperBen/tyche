@@ -168,7 +168,15 @@ server codecs. Generated multipart codecs use the same form/file semantics as
 the runtime binder.
 
 Successful responses are wrapped in a `{"data": …}` envelope; errors are RFC
-9457 `application/problem+json`.
+9457 `application/problem+json`. JSON request bodies reject unsupported
+`Content-Type` values with 415, and JSON/SSE responses return 406 when the
+request `Accept` header does not allow the produced media type. Generated route
+metadata records the response content types emitted by generated codecs. The
+server-side `Codec` interface now owns the JSON request decode and success
+envelope path, with `JSONCodec` as the default implementation. Additional
+server-wide codecs can be registered on `APIConfig.Codecs`; JSON remains
+registered by default, and typed route OpenAPI content maps include configured
+codec media types for JSON request and success bodies.
 
 Route input/output types may live anywhere, including a single-file `package
 main` — servergen keys main-package codecs to match Go's runtime reflection, so
@@ -280,6 +288,29 @@ server.Register(v1, uploadOp, uploadHandler, server.WithMaxBodyBytes(100<<20))
 api.Mount("/debug/pprof", pprofMux)
 ```
 
+## Content negotiation
+
+Typed routes use `application/json` by default. Register extra server codecs
+with `APIConfig.Codecs`; `JSONCodec` remains available automatically. OpenAPI
+advertises every configured codec for non-multipart request bodies and success
+responses, and runtime request/response selection uses `Content-Type` and
+`Accept`.
+
+```go
+api := server.NewAPI(adapter, server.APIConfig{
+	Codecs: []server.Codec{myVendorJSONCodec},
+})
+
+server.Register(api, op, handler,
+	server.WithRequestContentTypes("application/json"),
+	server.WithResponseContentTypes("application/vnd.example+json"),
+)
+```
+
+When extra codecs are configured, older JSON-only generated route codecs are
+bypassed in favour of the negotiated reflection path. Regenerated route codecs
+receive the route codec set and keep the fast JSON path when JSON is selected.
+
 ## Instrumentation
 
 A dependency-free seam for tracing/metrics reporting method, route template,
@@ -352,6 +383,12 @@ than being decoded or dropped.
 Operations with `multipart/form-data` request bodies generate `form`, `file`,
 and `files` input fields. File inputs use the generated `client.File` type,
 which carries the part filename, content reader, and optional content type.
+Non-multipart request/response encoding goes through the generated `Codec`
+interface; `client.WithCodec(...)` can swap the default `application/json`
+codec for a compatible JSON vendor media type or another implementation. By
+default, generated methods send `Accept` from each operation's documented
+success media types, so raw downloads request their actual media type rather
+than JSON.
 
 By default, structurally identical schemas share one generated Go type. Use
 `--type-naming operation-scoped` when distinct operations should keep distinct

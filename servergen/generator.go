@@ -7,6 +7,7 @@ import (
 	"go/constant"
 	"go/token"
 	"go/types"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
@@ -19,19 +20,20 @@ import (
 const GeneratedFilename = "zz_server_routes_gen.go"
 
 type RouteSpec struct {
-	PackageName      string
-	Path             string
-	ServerImportPath string
-	OperationID      string
-	Method           string
-	InputType        string
-	OutputType       string
-	InputTypeKey     string
-	OutputTypeKey    string
-	Dir              string
-	PackagePath      string
-	InputBind        InputBindSpec
-	OutputWrite      OutputWriteSpec
+	PackageName          string
+	Path                 string
+	ServerImportPath     string
+	OperationID          string
+	Method               string
+	InputType            string
+	OutputType           string
+	InputTypeKey         string
+	OutputTypeKey        string
+	ResponseContentTypes []string
+	Dir                  string
+	PackagePath          string
+	InputBind            InputBindSpec
+	OutputWrite          OutputWriteSpec
 }
 
 // generatedTypeKey computes the runtime identity key for a route input/output
@@ -390,6 +392,7 @@ func routeSpecFromCall(pkg *packages.Package, call *ast.CallExpr, serverImportPa
 	spec.OutputTypeKey = generatedTypeKey(outputPtr.Elem())
 	spec.InputBind = analyseInputType(inputPtr.Elem())
 	spec.OutputWrite = analyseOutputType(outputPtr.Elem())
+	spec.ResponseContentTypes = generatedResponseContentTypes(spec.OutputWrite)
 
 	if spec.Method == "" || spec.Path == "" {
 		return RouteSpec{}, false, fmt.Errorf("route %s is missing method or path", spec.OperationID)
@@ -433,10 +436,6 @@ func GeneratePackageManifest(pkgPath string, routes []RouteSpec) ([]byte, error)
 			if route.InputBind.Body != nil {
 				useEncodingJSON = true
 				useFmt = true
-				if route.InputBind.Body.Direct == nil {
-					useErrors = true
-					useIO = true
-				}
 				markGeneratedBodyImports(route.InputBind.Body, &useFmt, &useRegexp, &useNetMail, &useNetURL)
 				if generatedBodyNeedsStrconv(route.InputBind.Body) {
 					useStrconv = true
@@ -449,9 +448,6 @@ func GeneratePackageManifest(pkgPath string, routes []RouteSpec) ([]byte, error)
 		if route.OutputWrite.Manual {
 			if route.OutputWrite.StatusField != "" || len(route.OutputWrite.Headers) > 0 || route.OutputWrite.BodyFieldName != "" {
 				useFmt = true
-			}
-			if route.OutputWrite.Body != nil {
-				useStrconv = true
 			}
 		} else {
 			useFmt = true
@@ -507,6 +503,7 @@ func GeneratePackageManifest(pkgPath string, routes []RouteSpec) ([]byte, error)
 		buf.WriteString("\t\t\tOutputType: " + strconv.Quote(route.OutputType) + ",\n")
 		buf.WriteString("\t\t\tInputTypeKey: " + strconv.Quote(route.InputTypeKey) + ",\n")
 		buf.WriteString("\t\t\tOutputTypeKey: " + strconv.Quote(route.OutputTypeKey) + ",\n")
+		writeGeneratedStringSliceField(&buf, "\t\t\t", "ResponseContentTypes", route.ResponseContentTypes)
 		buf.WriteString("\t\t\tHasGeneratedCodec: " + strconv.FormatBool(hasGeneratedCodec) + ",\n")
 		buf.WriteString("\t\t},\n")
 	}
@@ -524,18 +521,40 @@ func GeneratePackageManifest(pkgPath string, routes []RouteSpec) ([]byte, error)
 		buf.WriteString("\t\tOutputType: " + strconv.Quote(route.OutputType) + ",\n")
 		buf.WriteString("\t\tInputTypeKey: " + strconv.Quote(route.InputTypeKey) + ",\n")
 		buf.WriteString("\t\tOutputTypeKey: " + strconv.Quote(route.OutputTypeKey) + ",\n")
+		writeGeneratedStringSliceField(&buf, "\t\t", "ResponseContentTypes", route.ResponseContentTypes)
 		buf.WriteString("\t\tHasGeneratedCodec: true,\n")
 		buf.WriteString("\t}, serverpkg.GeneratedRouteCodec{\n")
-		buf.WriteString("\t\tParse: func(req *http.Request) (any, error) {\n")
+		buf.WriteString("\t\tParseWithCodecs: func(req *http.Request, codecs []serverpkg.Codec) (any, error) {\n")
 		writeParseBody(&buf, route)
 		buf.WriteString("\t\t},\n")
-		buf.WriteString("\t\tWrite: func(w http.ResponseWriter, req *http.Request, value any) error {\n")
+		buf.WriteString("\t\tWriteWithCodecs: func(w http.ResponseWriter, req *http.Request, value any, codecs []serverpkg.Codec) error {\n")
 		writeWriteBody(&buf, route)
 		buf.WriteString("\t\t},\n")
 		buf.WriteString("\t})\n")
 	}
 	buf.WriteString("}\n")
 	return buf.Bytes(), nil
+}
+
+func generatedResponseContentTypes(out OutputWriteSpec) []string {
+	if out.Body != nil || out.BodyFieldName != "" || out.StaticStatus == http.StatusOK {
+		return []string{"application/json"}
+	}
+	return nil
+}
+
+func writeGeneratedStringSliceField(buf *bytes.Buffer, indent, name string, values []string) {
+	if len(values) == 0 {
+		return
+	}
+	buf.WriteString(indent + name + ": []string{")
+	for i, value := range values {
+		if i > 0 {
+			buf.WriteString(", ")
+		}
+		buf.WriteString(strconv.Quote(value))
+	}
+	buf.WriteString("},\n")
 }
 
 func GroupRoutesByPackage(routes []RouteSpec) map[string][]RouteSpec {

@@ -20,17 +20,18 @@ func (f inputField) isSlice() bool { return strings.HasPrefix(f.GoType, "[]") }
 
 // operation is a fully resolved operation ready for emission.
 type operation struct {
-	Method     string
-	HTTPPath   string
-	GoName     string
-	InputName  string
-	OutputType string
-	EventType  string
-	Summary    string
-	Fields     []inputField
-	Stream     bool
-	Bytes      bool
-	Deprecated bool
+	Method            string
+	HTTPPath          string
+	GoName            string
+	InputName         string
+	OutputType        string
+	EventType         string
+	Summary           string
+	Fields            []inputField
+	SuccessMediaTypes []string
+	Stream            bool
+	Bytes             bool
+	Deprecated        bool
 }
 
 // buildOperations walks the document and resolves every operation, registering
@@ -101,6 +102,7 @@ func resolveOperation(ts *typeSet, doc *Document, path, method string, op *Opera
 		}
 	}
 
+	o.SuccessMediaTypes = successMediaTypes(op)
 	if ev, ok := streamEvent(op); ok {
 		o.Stream = true
 		o.EventType = ts.goType(ev, goName+"Event")
@@ -155,23 +157,47 @@ func isBinarySchema(s *Schema) bool {
 	return s != nil && s.Type == "string" && s.Format == "binary"
 }
 
-// successBytes reports whether the lowest 2xx response carries a body in a
-// single non-JSON, non-SSE media type (e.g. application/octet-stream, text/*).
-// Such a response is returned to the caller as raw bytes rather than being
-// JSON-decoded — or, as before this, silently discarded.
+// successBytes reports whether any 2xx response carries a body in a single
+// non-JSON, non-SSE media type (e.g. application/octet-stream, text/*). Mixed
+// structured/raw success bodies are treated as structured.
 func successBytes(op *Operation) bool {
-	resp := lowest2xx(op)
-	if resp == nil || len(resp.Content) == 0 {
+	mediaTypes := successMediaTypes(op)
+	if len(mediaTypes) == 0 {
 		return false
 	}
-	if resp.Content["application/json"] != nil || resp.Content["text/event-stream"] != nil {
-		return false
+	for _, mediaType := range mediaTypes {
+		if mediaType == "application/json" || mediaType == "text/event-stream" {
+			return false
+		}
 	}
 	return true
 }
 
-// lowest2xx returns the response for the lowest 2xx status code, or nil.
-func lowest2xx(op *Operation) *Response {
+func successMediaTypes(op *Operation) []string {
+	seen := map[string]bool{}
+	for _, resp := range successResponses(op) {
+		if resp == nil || len(resp.Content) == 0 {
+			continue
+		}
+		for mediaType := range resp.Content {
+			seen[mediaType] = true
+		}
+	}
+	if len(seen) == 0 {
+		return nil
+	}
+	mediaTypes := make([]string, 0, len(seen))
+	for mediaType := range seen {
+		mediaTypes = append(mediaTypes, mediaType)
+	}
+	sort.Strings(mediaTypes)
+	return mediaTypes
+}
+
+func successResponses(op *Operation) []*Response {
+	if op == nil {
+		return nil
+	}
 	codes := make([]string, 0, len(op.Responses))
 	for code := range op.Responses {
 		if len(code) > 0 && code[0] == '2' {
@@ -182,30 +208,39 @@ func lowest2xx(op *Operation) *Response {
 		return nil
 	}
 	sort.Strings(codes)
-	return op.Responses[codes[0]]
+	responses := make([]*Response, 0, len(codes))
+	for _, code := range codes {
+		responses = append(responses, op.Responses[code])
+	}
+	return responses
+}
+
+func firstSuccessMediaType(op *Operation, mediaType string) *MediaType {
+	for _, resp := range successResponses(op) {
+		if resp == nil {
+			continue
+		}
+		if mt := resp.Content[mediaType]; mt != nil {
+			return mt
+		}
+	}
+	return nil
 }
 
 // streamEvent returns the event-data schema for a text/event-stream success
 // response, and whether the operation is a streaming one.
 func streamEvent(op *Operation) (*Schema, bool) {
-	resp := lowest2xx(op)
-	if resp == nil {
-		return nil, false
-	}
-	if mt := resp.Content["text/event-stream"]; mt != nil && mt.Schema != nil {
+	mt := firstSuccessMediaType(op, "text/event-stream")
+	if mt != nil && mt.Schema != nil {
 		return mt.Schema, true
 	}
 	return nil, false
 }
 
 // successData returns the response body schema (unwrapped from the tyche
-// {"data": …} envelope) for the lowest 2xx response, and whether one exists.
+// {"data": …} envelope) for the first JSON 2xx response, and whether one exists.
 func successData(doc *Document, op *Operation) (*Schema, bool) {
-	resp := lowest2xx(op)
-	if resp == nil {
-		return nil, false
-	}
-	mt := resp.Content["application/json"]
+	mt := firstSuccessMediaType(op, "application/json")
 	if mt == nil || mt.Schema == nil {
 		return nil, false
 	}
@@ -273,17 +308,25 @@ func emitMethod(b *strings.Builder, clientName string, o *operation) {
 	queryArg, headerArg, bodyArg := emitRequestBuild(b, o)
 
 	httpMethod := "http.Method" + methodConst(o.Method)
+	accept := strconv.Quote(acceptHeader(o.SuccessMediaTypes))
 	switch {
 	case o.Stream:
 		fmt.Fprintf(b, "\treturn doStream[%s](ctx, c, %s, path, %s, %s, %s, opts)\n", o.EventType, httpMethod, queryArg, headerArg, bodyArg)
 	case o.OutputType != "":
-		fmt.Fprintf(b, "\treturn doJSON[%s](ctx, c, %s, path, %s, %s, %s, opts)\n", o.OutputType, httpMethod, queryArg, headerArg, bodyArg)
+		fmt.Fprintf(b, "\treturn doJSON[%s](ctx, c, %s, path, %s, %s, %s, %s, opts)\n", o.OutputType, httpMethod, queryArg, headerArg, bodyArg, accept)
 	case o.Bytes:
-		fmt.Fprintf(b, "\treturn doBytes(ctx, c, %s, path, %s, %s, %s, opts)\n", httpMethod, queryArg, headerArg, bodyArg)
+		fmt.Fprintf(b, "\treturn doBytes(ctx, c, %s, path, %s, %s, %s, %s, opts)\n", httpMethod, queryArg, headerArg, bodyArg, accept)
 	default:
-		fmt.Fprintf(b, "\treturn doDiscard(ctx, c, %s, path, %s, %s, %s, opts)\n", httpMethod, queryArg, headerArg, bodyArg)
+		fmt.Fprintf(b, "\treturn doDiscard(ctx, c, %s, path, %s, %s, %s, %s, opts)\n", httpMethod, queryArg, headerArg, bodyArg, accept)
 	}
 	b.WriteString("}\n\n")
+}
+
+func acceptHeader(mediaTypes []string) string {
+	if len(mediaTypes) == 0 {
+		return "*/*"
+	}
+	return strings.Join(mediaTypes, ", ")
 }
 
 // emitRequestBuild writes the path/query/header/body construction shared by all

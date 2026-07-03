@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"mime/multipart"
 	"net/http"
 	"reflect"
@@ -96,7 +97,21 @@ func RegisterE[I, O any](grp RouteTarget, op Operation, handler TypedHandler[I, 
 		outputSpec.defaultStatus = op.DefaultStatus
 	}
 
+	ro := resolveRouteOptions(opts)
+	apiCodecs := grp.apiCodecs()
+	requestCodecs, err := codecsForMediaTypes(apiCodecs, ro.requestContentTypes)
+	if err != nil {
+		return err
+	}
+	responseCodecs, err := codecsForMediaTypes(apiCodecs, ro.responseContentTypes)
+	if err != nil {
+		return err
+	}
 	codec, hasCodec := generatedCodec(resolvedOp, inputType, outputType)
+	if hasCodec && (hasNonJSONCodec(requestCodecs) || hasNonJSONCodec(responseCodecs)) &&
+		(codec.ParseWithCodecs == nil || codec.WriteWithCodecs == nil) {
+		hasCodec = false
+	}
 	if !hasCodec {
 		// No generated codec (servergen not run, or this route shape isn't yet
 		// supported by codegen): fall back to the reflection binder so the route
@@ -104,24 +119,43 @@ func RegisterE[I, O any](grp RouteTarget, op Operation, handler TypedHandler[I, 
 		// optimization for production — run servergen to get them.
 		codec = GeneratedRouteCodec{
 			Parse: func(req *http.Request) (any, error) {
-				in, err := ParseRequest[I](req)
+				in, err := parseRequestWithCodecs[I](req, requestCodecs)
 				if err != nil {
 					return nil, err
 				}
 				return in, nil
 			},
 			Write: func(w http.ResponseWriter, req *http.Request, value any) error {
-				return writeReflectionResponse(w, req, value, outputSpec)
+				return writeReflectionResponse(w, req, value, outputSpec, responseCodecs)
 			},
 		}
 	}
+	parse := codec.Parse
+	if codec.ParseWithCodecs != nil {
+		parse = func(req *http.Request) (any, error) {
+			return codec.ParseWithCodecs(req, requestCodecs)
+		}
+	}
+	write := codec.Write
+	if codec.WriteWithCodecs != nil {
+		write = func(w http.ResponseWriter, req *http.Request, value any) error {
+			return codec.WriteWithCodecs(w, req, value, responseCodecs)
+		}
+	}
+	if parse == nil || write == nil {
+		return fmt.Errorf("generated codec %q is incomplete", op.OperationID)
+	}
 
 	httpHandler := func(w http.ResponseWriter, req *http.Request) error {
-		inputAny, err := codec.Parse(req)
+		inputAny, err := parse(req)
 		if err != nil {
 			var validationErr *validation.Error
 			if errors.As(err, &validationErr) {
 				return validationErr
+			}
+			var httpErr HTTPError
+			if errors.As(err, &httpErr) {
+				return httpErr
 			}
 			return NewHTTPError(http.StatusBadRequest, err.Error())
 		}
@@ -136,17 +170,17 @@ func RegisterE[I, O any](grp RouteTarget, op Operation, handler TypedHandler[I, 
 			return err
 		}
 
-		return codec.Write(w, req, out)
+		return write(w, req, out)
 	}
 
-	if err := grp.handleRoute(op.Method, op.Path, httpHandler, resolveRouteOptions(opts)); err != nil {
+	if err := grp.handleRoute(op.Method, op.Path, httpHandler, ro); err != nil {
 		return err
 	}
-	registerOpenAPIOperation(grp, op, inputType, outputType, outputSpec)
+	registerOpenAPIOperation(grp, op, inputType, outputType, outputSpec, requestCodecs, responseCodecs)
 	return nil
 }
 
-func registerOpenAPIOperation(grp RouteTarget, op Operation, inputType, outputType reflect.Type, outputSpec *outputSpec) {
+func registerOpenAPIOperation(grp RouteTarget, op Operation, inputType, outputType reflect.Type, outputSpec *outputSpec, requestCodecs, responseCodecs []Codec) {
 	doc := grp.apiDoc()
 	registry := grp.apiSchemaRegistry()
 
@@ -160,8 +194,8 @@ func registerOpenAPIOperation(grp RouteTarget, op Operation, inputType, outputTy
 		OperationID: op.OperationID,
 		Tags:        op.Tags,
 		Parameters:  extractParameters(inputType, registry),
-		RequestBody: extractRequestBody(inputType, registry),
-		Responses:   extractResponses(outputSpec, registry),
+		RequestBody: extractRequestBody(inputType, registry, requestCodecs),
+		Responses:   extractResponses(outputSpec, registry, responseCodecs),
 		Deprecated:  op.Deprecated,
 		Security:    normalizeSecurityRequirements(op.Security),
 	}
@@ -243,7 +277,7 @@ func extractParameters(t reflect.Type, registry *openapi.Registry) []*openapi.Pa
 	return params
 }
 
-func extractRequestBody(t reflect.Type, registry *openapi.Registry) *openapi.RequestBody {
+func extractRequestBody(t reflect.Type, registry *openapi.Registry, codecs []Codec) *openapi.RequestBody {
 	spec := inputSpecForType(t)
 	if spec.bodyMode == bodyModeNone {
 		return nil
@@ -252,29 +286,31 @@ func extractRequestBody(t reflect.Type, registry *openapi.Registry) *openapi.Req
 	if spec.bodyMode == bodyModeMultipart {
 		mediaType = "multipart/form-data"
 	}
+	content := map[string]*openapi.MediaType{
+		mediaType: {Schema: bodySchemaForSpec(spec, registry)},
+	}
+	if spec.bodyMode != bodyModeMultipart {
+		content = codecContentMap(codecs, bodySchemaForSpec(spec, registry))
+	}
 
 	return &openapi.RequestBody{
 		Required: spec.bodyRequired,
-		Content: map[string]*openapi.MediaType{
-			mediaType: {Schema: bodySchemaForSpec(spec, registry)},
-		},
+		Content:  content,
 	}
 }
 
-func extractResponses(spec *outputSpec, registry *openapi.Registry) map[string]*openapi.Response {
+func extractResponses(spec *outputSpec, registry *openapi.Registry, codecs []Codec) map[string]*openapi.Response {
 	statusCode := strconv.Itoa(spec.defaultStatus)
 	resp := map[string]*openapi.Response{
 		statusCode: {
 			Description: "Successful response",
 			Headers:     responseHeadersForSpec(spec, registry),
-			Content: map[string]*openapi.MediaType{
-				"application/json": {Schema: &openapi.Schema{
-					Type: "object",
-					Properties: map[string]*openapi.Schema{
-						"data": bodySchemaForOutputSpec(spec, registry),
-					},
-				}},
-			},
+			Content: codecContentMap(codecs, &openapi.Schema{
+				Type: "object",
+				Properties: map[string]*openapi.Schema{
+					"data": bodySchemaForOutputSpec(spec, registry),
+				},
+			}),
 		},
 		"default": {
 			Description: "Error response",
@@ -299,7 +335,33 @@ func extractResponses(spec *outputSpec, registry *openapi.Registry) map[string]*
 	return resp
 }
 
+func codecContentMap(codecs []Codec, schema *openapi.Schema) map[string]*openapi.MediaType {
+	content := make(map[string]*openapi.MediaType, len(codecs))
+	for _, codec := range codecs {
+		if codec == nil {
+			continue
+		}
+		mediaType := strings.TrimSpace(codec.MediaType())
+		if mediaType == "" {
+			continue
+		}
+		content[mediaType] = &openapi.MediaType{Schema: openapi.CloneSchema(schema)}
+	}
+	if len(content) == 0 {
+		content["application/json"] = &openapi.MediaType{Schema: openapi.CloneSchema(schema)}
+	}
+	return content
+}
+
 func ParseRequest[I any](req *http.Request) (*I, error) {
+	return parseRequestWithCodecs[I](req, []Codec{JSONCodec{}})
+}
+
+func ParseRequestWithCodecs[I any](req *http.Request, codecs []Codec) (*I, error) {
+	return parseRequestWithCodecs[I](req, codecs)
+}
+
+func parseRequestWithCodecs[I any](req *http.Request, codecs []Codec) (*I, error) {
 	spec := getInputSpec[I]()
 	value := reflect.New(spec.typ)
 	target := value.Elem()
@@ -376,7 +438,7 @@ func ParseRequest[I any](req *http.Request) (*I, error) {
 	}
 
 	if spec.bodyMode != bodyModeNone && spec.bodyMode != bodyModeMultipart {
-		if err := decodeRequestBody(req, target, spec); err != nil {
+		if err := decodeRequestBody(req, target, spec, codecs); err != nil {
 			return nil, err
 		}
 	}
@@ -400,7 +462,7 @@ func ParseRequest[I any](req *http.Request) (*I, error) {
 // status (from a Status field or the default), sets response headers, and wraps
 // the body in the {"data": …} success envelope. It is the write half of the
 // no-codegen fallback used by RegisterE.
-func writeReflectionResponse(w http.ResponseWriter, req *http.Request, value any, spec *outputSpec) error {
+func writeReflectionResponse(w http.ResponseWriter, req *http.Request, value any, spec *outputSpec, codecs []Codec) error {
 	rv := reflect.ValueOf(value)
 	if !rv.IsValid() || (rv.Kind() == reflect.Pointer && rv.IsNil()) {
 		w.WriteHeader(http.StatusNoContent)
@@ -432,21 +494,11 @@ func writeReflectionResponse(w http.ResponseWriter, req *http.Request, value any
 		w.WriteHeader(status)
 		return nil
 	}
-	if req != nil && req.Method == http.MethodHead {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(status)
-		return nil
-	}
-	return WriteSuccess(w, status, spec.bodyValue(outVal))
+	return WriteSuccessWithCodecs(w, req, status, spec.bodyValue(outVal), codecs)
 }
 
 func WriteJSON(w http.ResponseWriter, status int, v any) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if v == nil {
-		return nil
-	}
-	return json.NewEncoder(w).Encode(v)
+	return JSONCodec{}.encodeRaw(w, status, v)
 }
 
 // DataResponse is the standard envelope for all successful API responses.
@@ -456,7 +508,7 @@ type DataResponse struct {
 
 // WriteSuccess writes a successful JSON response wrapped in the standard DataResponse envelope.
 func WriteSuccess(w http.ResponseWriter, status int, data any) error {
-	return WriteJSON(w, status, DataResponse{Data: data})
+	return defaultJSONCodec.EncodeSuccess(w, status, data)
 }
 
 type inputBinding struct {
@@ -732,7 +784,23 @@ func inputSpecForType(t reflect.Type) *inputSpec {
 	return spec
 }
 
-func decodeRequestBody(req *http.Request, target reflect.Value, spec *inputSpec) error {
+func decodeRequestBody(req *http.Request, target reflect.Value, spec *inputSpec, codecs []Codec) error {
+	if req.Body == nil {
+		if spec.bodyRequired {
+			validationErr := &validation.Error{}
+			validationErr.AddRequired("")
+			return validationErr
+		}
+		return nil
+	}
+	codec, err := codecForRequestContentType(codecs, req.Header.Get("Content-Type"))
+	if err != nil {
+		return err
+	}
+	if !isJSONCodec(codec) {
+		return decodeRequestBodyWithCodec(req, target, spec, codec)
+	}
+
 	bodyBytes, err := readJSONBody(req)
 	if err != nil {
 		var maxBytesErr *http.MaxBytesError
@@ -778,6 +846,30 @@ func decodeRequestBody(req *http.Request, target reflect.Value, spec *inputSpec)
 	}
 
 	return ensureSingleJSONValue(decoder)
+}
+
+func decodeRequestBodyWithCodec(req *http.Request, target reflect.Value, spec *inputSpec, codec Codec) error {
+	switch spec.bodyMode {
+	case bodyModeStruct:
+		if err := codec.DecodeRequest(req, target.Addr().Interface()); err != nil {
+			return fmt.Errorf("failed to decode body: %w", err)
+		}
+	case bodyModeField:
+		field := target.Field(spec.bodyIndex)
+		if field.Kind() == reflect.Pointer {
+			if field.IsNil() {
+				field.Set(reflect.New(field.Type().Elem()))
+			}
+			if err := codec.DecodeRequest(req, field.Interface()); err != nil {
+				return fmt.Errorf("failed to decode body: %w", err)
+			}
+		} else {
+			if err := codec.DecodeRequest(req, field.Addr().Interface()); err != nil {
+				return fmt.Errorf("failed to decode body: %w", err)
+			}
+		}
+	}
+	return nil
 }
 
 func setStringValue(v reflect.Value, val string) error {
@@ -922,27 +1014,14 @@ func ReadMultipartFiles(req *http.Request, name string) ([]*multipart.FileHeader
 }
 
 func ReadRequestJSONBody(req *http.Request) ([]byte, error) {
-	if req.Body == nil {
-		return nil, nil
-	}
-	if err := validateJSONContentType(req.Header.Get("Content-Type")); err != nil {
-		return nil, err
-	}
-	bodyBytes, err := io.ReadAll(req.Body)
-	if err != nil {
-		var maxBytesErr *http.MaxBytesError
-		if errors.As(err, &maxBytesErr) {
-			return nil, fmt.Errorf("request body too large on %s %s: limit is %d bytes", req.Method, req.URL.Path, maxBytesErr.Limit)
-		}
-		return nil, fmt.Errorf("failed to read body: %w", err)
-	}
-	if isBlankJSONBody(bodyBytes) {
-		return nil, nil
-	}
-	return bodyBytes, nil
+	return JSONCodec{}.ReadRequest(req)
 }
 
 func ReadRequestJSONBodyFast(req *http.Request) ([]byte, error) {
+	return JSONCodec{}.ReadRequest(req)
+}
+
+func (JSONCodec) ReadRequest(req *http.Request) ([]byte, error) {
 	if req.Body == nil {
 		return nil, nil
 	}
@@ -964,6 +1043,10 @@ func ReadRequestJSONBodyFast(req *http.Request) ([]byte, error) {
 }
 
 func DecodeRequestJSONBodyFast(req *http.Request, dst any) error {
+	return defaultJSONCodec.DecodeRequest(req, dst)
+}
+
+func decodeRequestJSONBodyFast(req *http.Request, dst any) error {
 	if req.Body == nil {
 		return nil
 	}
@@ -995,6 +1078,10 @@ func DecodeRequestJSONBodyFast(req *http.Request, dst any) error {
 }
 
 func DecodeRequestJSONBodyStrictFast(req *http.Request, dst any, bodyRequired bool, required []RequiredJSONField) error {
+	return JSONCodec{}.DecodeRequestStrict(req, dst, bodyRequired, required)
+}
+
+func (JSONCodec) DecodeRequestStrict(req *http.Request, dst any, bodyRequired bool, required []RequiredJSONField) error {
 	if req.Body == nil {
 		if bodyRequired {
 			validationErr := &validation.Error{}
@@ -1048,9 +1135,13 @@ func validateJSONContentType(contentType string) error {
 	if contentType == "" {
 		return nil
 	}
-	mediaType := strings.TrimSpace(strings.Split(contentType, ";")[0])
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		return NewHTTPError(http.StatusUnsupportedMediaType, fmt.Sprintf("unsupported content type %q", contentType))
+	}
+	mediaType = strings.ToLower(mediaType)
 	if mediaType != "" && mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
-		return fmt.Errorf("unsupported content type %q", mediaType)
+		return NewHTTPError(http.StatusUnsupportedMediaType, fmt.Sprintf("unsupported content type %q", mediaType))
 	}
 	return nil
 }
@@ -1059,15 +1150,109 @@ func validateMultipartContentType(contentType string) error {
 	if contentType == "" {
 		return nil
 	}
-	mediaType := strings.TrimSpace(strings.Split(contentType, ";")[0])
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		return NewHTTPError(http.StatusUnsupportedMediaType, fmt.Sprintf("unsupported content type %q", contentType))
+	}
+	mediaType = strings.ToLower(mediaType)
 	if mediaType != "" && mediaType != "multipart/form-data" {
-		return fmt.Errorf("unsupported content type %q", mediaType)
+		return NewHTTPError(http.StatusUnsupportedMediaType, fmt.Sprintf("unsupported content type %q", mediaType))
 	}
 	return nil
 }
 
 func ValidateJSONContentType(contentType string) error {
 	return validateJSONContentType(contentType)
+}
+
+// NegotiateResponseContentType returns 406 when req's Accept header does not
+// allow any of the response media types. An absent Accept header accepts any
+// response. Passing no media types is treated as a response with no negotiated
+// body.
+func NegotiateResponseContentType(req *http.Request, mediaTypes ...string) error {
+	if req == nil || len(mediaTypes) == 0 {
+		return nil
+	}
+	for _, mediaType := range mediaTypes {
+		if acceptsMediaType(req.Header.Get("Accept"), mediaType) {
+			return nil
+		}
+	}
+	return NewHTTPError(
+		http.StatusNotAcceptable,
+		fmt.Sprintf("not acceptable: client does not accept %q", strings.Join(mediaTypes, ", ")),
+	)
+}
+
+func acceptsMediaType(accept, mediaType string) bool {
+	accept = strings.TrimSpace(accept)
+	if accept == "" {
+		return true
+	}
+	wantType, wantSubtype, ok := splitMediaType(mediaType)
+	if !ok {
+		return false
+	}
+	bestSpecificity := -1
+	bestQ := 0.0
+	for part := range strings.SplitSeq(accept, ",") {
+		mediaRange, params, err := mime.ParseMediaType(strings.TrimSpace(part))
+		if err != nil {
+			continue
+		}
+		gotType, gotSubtype, ok := splitMediaType(mediaRange)
+		if !ok {
+			continue
+		}
+		specificity := mediaRangeSpecificity(gotType, gotSubtype, wantType, wantSubtype)
+		if specificity < 0 {
+			continue
+		}
+		q := 1.0
+		if rawQ := params["q"]; rawQ != "" {
+			parsed, err := strconv.ParseFloat(rawQ, 64)
+			if err != nil || parsed < 0 {
+				continue
+			}
+			if parsed > 1 {
+				parsed = 1
+			}
+			q = parsed
+		}
+		if specificity > bestSpecificity {
+			bestSpecificity = specificity
+			bestQ = q
+			continue
+		}
+		if specificity == bestSpecificity && q > bestQ {
+			bestQ = q
+		}
+	}
+	return bestSpecificity >= 0 && bestQ > 0
+}
+
+func splitMediaType(mediaType string) (string, string, bool) {
+	mediaType = strings.ToLower(strings.TrimSpace(mediaType))
+	typ, subtype, ok := strings.Cut(mediaType, "/")
+	if !ok || typ == "" || subtype == "" {
+		return "", "", false
+	}
+	return typ, subtype, true
+}
+
+func mediaRangeSpecificity(gotType, gotSubtype, wantType, wantSubtype string) int {
+	switch {
+	case gotType == "*" && gotSubtype == "*":
+		return 0
+	case gotType == wantType && gotSubtype == "*":
+		return 1
+	case gotType == wantType && strings.HasPrefix(gotSubtype, "*+") && strings.HasSuffix(wantSubtype, gotSubtype[1:]):
+		return 2
+	case gotType == wantType && gotSubtype == wantSubtype:
+		return 3
+	default:
+		return -1
+	}
 }
 
 func isBlankJSONBody(body []byte) bool {

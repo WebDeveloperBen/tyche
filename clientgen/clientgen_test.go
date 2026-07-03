@@ -77,6 +77,15 @@ const sampleSpec = `{
         "responses": {"200": {"description": "pdf", "content": {"application/pdf": {"schema": {"type": "string", "format": "binary"}}}}}
       }
     },
+    "/jobs": {
+      "post": {
+        "operationId": "start-job",
+        "responses": {
+          "201": {"description": "accepted"},
+          "202": {"description": "started", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"type": "object", "properties": {"id": {"type": "string"}}, "required": ["id"]}}}}}}
+        }
+      }
+    },
     "/uploads": {
       "post": {
         "operationId": "upload-avatar",
@@ -137,6 +146,7 @@ func TestGenerate_ExpectedFilesAndSymbols(t *testing.T) {
 		"func (c *Client) ListUsers(ctx context.Context, in *ListUsersInput, opts ...CallOption)",
 		"func (c *Client) DisableUser(ctx context.Context, in *DisableUserInput, opts ...CallOption) error",                 // 204 -> error only
 		"func (c *Client) DownloadReport(ctx context.Context, in *DownloadReportInput, opts ...CallOption) ([]byte, error)", // non-JSON body -> []byte
+		"func (c *Client) StartJob(ctx context.Context, in *StartJobInput, opts ...CallOption) (*StartJobOutput, error)",
 		"func (c *Client) StreamEvents(ctx context.Context, in *StreamEventsInput, opts ...CallOption) (*Stream[StreamEventsEvent], error)",
 		"func (c *Client) UploadAvatar(ctx context.Context, in *UploadAvatarInput, opts ...CallOption) (*UploadAvatarOutput, error)",
 		"return doStream[StreamEventsEvent](ctx, c, http.MethodGet,",
@@ -163,6 +173,8 @@ func TestGenerate_ExpectedFilesAndSymbols(t *testing.T) {
 		"body.addField(\"title\", fmtParam(in.Title))",
 		"body.addFile(\"avatar\", *in.Avatar)",
 		"func (c *Client) PutBlob(ctx context.Context, in *PutBlobInput, opts ...CallOption) error",
+		`return doBytes(ctx, c, http.MethodGet, path, nil, nil, nil, "application/pdf", opts)`,
+		`return doJSON[StartJobOutput](ctx, c, http.MethodPost, path, nil, nil, nil, "application/json", opts)`,
 	} {
 		if !strings.Contains(nops, want) {
 			t.Errorf("operations.go missing %q", want)
@@ -362,12 +374,59 @@ func TestGenerate_RequiresModule(t *testing.T) {
 }
 
 const runtimeSpec = `{
-  "openapi": "3.1.0", "info": {"title": "RT", "version": "1.0.0"},
+  "openapi": "3.1.0",
+  "info": {"title": "RT", "version": "1.0.0"},
   "paths": {
-    "/ping": {"get": {"operationId": "ping", "responses": {"200": {"description": "ok", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"type": "object", "properties": {"pong": {"type": "boolean"}, "count": {"type": "integer", "format": "int64"}}, "required": ["pong", "count"]}}}}}}}}},
-    "/boom": {"get": {"operationId": "boom", "responses": {"200": {"description": "ok", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"type": "object", "properties": {"x": {"type": "string"}}}}}}}}}}},
-    "/stream": {"get": {"operationId": "stream-events", "responses": {"200": {"description": "s", "content": {"text/event-stream": {"schema": {"type": "object", "properties": {"message": {"type": "string"}}, "required": ["message"]}}}}}}},
-    "/upload": {"post": {"operationId": "upload-avatar", "requestBody": {"required": true, "content": {"multipart/form-data": {"schema": {"type": "object", "properties": {"title": {"type": "string"}, "count": {"type": "integer"}, "tags": {"type": "array", "items": {"type": "string"}}, "avatar": {"type": "string", "format": "binary"}, "docs": {"type": "array", "items": {"type": "string", "format": "binary"}}}, "required": ["title", "count", "avatar"]}}}}, "responses": {"200": {"description": "ok", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"type": "object", "properties": {"ok": {"type": "boolean"}}, "required": ["ok"]}}}}}}}}}
+    "/ping": {
+      "get": {
+        "operationId": "ping",
+        "responses": {
+          "200": {"description": "ok", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"type": "object", "properties": {"pong": {"type": "boolean"}, "count": {"type": "integer", "format": "int64"}}, "required": ["pong", "count"]}}}}}}
+        }
+      }
+    },
+    "/boom": {
+      "get": {
+        "operationId": "boom",
+        "responses": {
+          "200": {"description": "ok", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"type": "object", "properties": {"x": {"type": "string"}}}}}}}}
+        }
+      }
+    },
+    "/stream": {
+      "get": {
+        "operationId": "stream-events",
+        "responses": {
+          "200": {"description": "s", "content": {"text/event-stream": {"schema": {"type": "object", "properties": {"message": {"type": "string"}}, "required": ["message"]}}}}
+        }
+      }
+    },
+    "/upload": {
+      "post": {
+        "operationId": "upload-avatar",
+        "requestBody": {"required": true, "content": {"multipart/form-data": {"schema": {"type": "object", "properties": {"title": {"type": "string"}, "count": {"type": "integer"}, "tags": {"type": "array", "items": {"type": "string"}}, "avatar": {"type": "string", "format": "binary"}, "docs": {"type": "array", "items": {"type": "string", "format": "binary"}}}, "required": ["title", "count", "avatar"]}}}},
+        "responses": {
+          "200": {"description": "ok", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"type": "object", "properties": {"ok": {"type": "boolean"}}, "required": ["ok"]}}}}}}
+        }
+      }
+    },
+    "/report": {
+      "get": {
+        "operationId": "download-report",
+        "responses": {
+          "200": {"description": "pdf", "content": {"application/pdf": {"schema": {"type": "string", "format": "binary"}}}}
+        }
+      }
+    },
+    "/custom": {
+      "post": {
+        "operationId": "custom-codec",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}}}},
+        "responses": {
+          "200": {"description": "ok", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"type": "object", "properties": {"ok": {"type": "boolean"}}, "required": ["ok"]}}}}}}
+        }
+      }
+    }
   },
   "components": {"schemas": {}}
 }`
@@ -380,6 +439,7 @@ const runtimeHarness = `package client
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -387,11 +447,25 @@ import (
 	"testing"
 )
 
+type vendorCodec struct{}
+
+func (vendorCodec) ContentType() string { return "application/vnd.tyche+json" }
+func (vendorCodec) Accept() string      { return "application/vnd.tyche+json" }
+func (vendorCodec) Marshal(v any) ([]byte, error) {
+	return json.Marshal(v)
+}
+func (vendorCodec) Unmarshal(data []byte, v any) error {
+	return json.Unmarshal(data, v)
+}
+
 func TestRuntimeBehavior(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ping", func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("X-Custom") != "hi" {
 			t.Errorf("per-call header not sent: %q", r.Header.Get("X-Custom"))
+		}
+		if got := r.Header.Get("Accept"); got != "application/json" {
+			t.Errorf("ping accept = %q", got)
 		}
 		w.Header().Set("X-Trace", "abc")
 		w.Header().Set("Content-Type", "application/json")
@@ -442,6 +516,23 @@ func TestRuntimeBehavior(t *testing.T) {
 		} else {
 			_, _ = w.Write([]byte("{\"data\":{\"ok\":false}}"))
 		}
+	})
+	mux.HandleFunc("/custom", func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Content-Type"); got != "application/vnd.tyche+json" {
+			t.Errorf("custom codec content type = %q", got)
+		}
+		if got := r.Header.Get("Accept"); got != "application/vnd.tyche+json" {
+			t.Errorf("custom codec accept = %q", got)
+		}
+		w.Header().Set("Content-Type", "application/vnd.tyche+json")
+		_, _ = w.Write([]byte("{\"data\":{\"ok\":true}}"))
+	})
+	mux.HandleFunc("/report", func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Accept"); got != "application/pdf" {
+			t.Errorf("report accept = %q", got)
+		}
+		w.Header().Set("Content-Type", "application/pdf")
+		_, _ = w.Write([]byte("%PDF"))
 	})
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
@@ -521,6 +612,25 @@ func TestRuntimeBehavior(t *testing.T) {
 	}
 	if !upload.Ok {
 		t.Fatalf("multipart upload was not encoded as expected")
+	}
+
+	report, err := c.DownloadReport(context.Background(), &DownloadReportInput{})
+	if err != nil {
+		t.Fatalf("DownloadReport: %v", err)
+	}
+	if string(report) != "%PDF" {
+		t.Fatalf("raw response body = %q", report)
+	}
+
+	customClient := New(srv.URL, WithCodec(vendorCodec{}))
+	custom, err := customClient.CustomCodec(context.Background(), &CustomCodecInput{
+		Body: &CustomCodecBody{Name: "Ada"},
+	})
+	if err != nil {
+		t.Fatalf("CustomCodec: %v", err)
+	}
+	if !custom.Ok {
+		t.Fatalf("custom codec response was not decoded")
 	}
 }
 `

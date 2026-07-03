@@ -18,6 +18,13 @@ func writeParseBody(buf *bytes.Buffer, route RouteSpec) {
 		buf.WriteString("](req)\n")
 		return
 	}
+	if route.InputBind.Body != nil {
+		buf.WriteString("\t\t\tuseJSONCodec, err := serverpkg.UseJSONCodecForRequest(req, codecs)\n")
+		buf.WriteString("\t\t\tif err != nil { return nil, err }\n")
+		buf.WriteString("\t\t\tif !useJSONCodec { return serverpkg.ParseRequestWithCodecs[")
+		buf.WriteString(route.InputType)
+		buf.WriteString("](req, codecs) }\n")
+	}
 
 	buf.WriteString("\t\t\tvar in ")
 	buf.WriteString(route.InputType)
@@ -239,32 +246,10 @@ func writeGeneratedBodyParse(buf *bytes.Buffer, body *BodyBindSpec) {
 
 func writeStrictGeneratedBodyParse(buf *bytes.Buffer, body *BodyBindSpec) {
 	const indent = "\t\t\t"
-	buf.WriteString(indent + "if err := serverpkg.ValidateJSONContentType(req.Header.Get(\"Content-Type\")); err != nil { return nil, err }\n")
-	buf.WriteString(indent + "if req.Body == nil {\n")
-	if body.Required {
-		buf.WriteString(indent + "\tvalidationErr.AddRequired(\"\")\n")
-		buf.WriteString(indent + "\treturn nil, &validationErr\n")
-	} else {
-		buf.WriteString(indent + "\treturn &in, nil\n")
-	}
-	buf.WriteString(indent + "}\n")
 	buf.WriteString(indent + "var decoded ")
 	writeDecodedBodyStructType(buf, body.Fields, "")
 	buf.WriteString("\n")
-	buf.WriteString(indent + "dec := json.NewDecoder(req.Body)\n")
-	buf.WriteString(indent + "dec.DisallowUnknownFields()\n")
-	buf.WriteString(indent + "if err := dec.Decode(&decoded); err != nil {\n")
-	buf.WriteString(indent + "\tif errors.Is(err, io.EOF) {\n")
-	if body.Required {
-		buf.WriteString(indent + "\t\tvalidationErr.AddRequired(\"\")\n")
-		buf.WriteString(indent + "\t\treturn nil, &validationErr\n")
-	} else {
-		buf.WriteString(indent + "\t\treturn &in, nil\n")
-	}
-	buf.WriteString(indent + "\t}\n")
-	buf.WriteString(indent + "\treturn nil, fmt.Errorf(\"failed to decode body: %w\", err)\n")
-	buf.WriteString(indent + "}\n")
-	buf.WriteString(indent + "if err := serverpkg.EnsureSingleJSONValue(dec); err != nil { return nil, err }\n")
+	buf.WriteString(indent + "if err := serverpkg.DecodeRequestJSONBodyStrictFast(req, &decoded, " + strconv.FormatBool(body.Required) + ", nil); err != nil { return nil, err }\n")
 	writeDecodedBodyAssignments(buf, body.Fields, "decoded", body.Target, indent, strconv.Quote(""))
 }
 
@@ -641,15 +626,19 @@ func writeWriteBody(buf *bytes.Buffer, route RouteSpec) {
 		return
 	}
 	if route.OutputWrite.BodyFieldName != "" {
-		buf.WriteString("\t\t\treturn serverpkg.WriteSuccess(w, status, out." + route.OutputWrite.BodyFieldName + ")\n")
+		buf.WriteString("\t\t\treturn serverpkg.WriteSuccessWithCodecs(w, req, status, out." + route.OutputWrite.BodyFieldName + ", codecs)\n")
 		return
 	}
-	buf.WriteString("\t\t\treturn serverpkg.WriteSuccess(w, status, out)\n")
+	buf.WriteString("\t\t\treturn serverpkg.WriteSuccessWithCodecs(w, req, status, out, codecs)\n")
 }
 
 func writeGeneratedOutputBody(buf *bytes.Buffer, body *OutputBodySpec, staticStatus int) {
-	buf.WriteString("\t\t\tbufPtr := serverpkg.AcquireGeneratedJSONBuffer()\n")
-	buf.WriteString("\t\t\tdefer serverpkg.ReleaseGeneratedJSONBuffer(bufPtr)\n")
+	buf.WriteString("\t\t\tuseJSONCodec, err := serverpkg.UseJSONCodecForResponse(req, codecs)\n")
+	buf.WriteString("\t\t\tif err != nil { return err }\n")
+	buf.WriteString("\t\t\tif !useJSONCodec { return serverpkg.WriteSuccessWithCodecs(w, req, status, " + body.TargetExpr + ", codecs) }\n")
+	buf.WriteString("\t\t\tjsonCodec := serverpkg.JSONCodec{}\n")
+	buf.WriteString("\t\t\tbufPtr := jsonCodec.AcquireGeneratedSuccessBuffer()\n")
+	buf.WriteString("\t\t\tdefer jsonCodec.ReleaseGeneratedSuccessBuffer(bufPtr)\n")
 	buf.WriteString("\t\t\tb := (*bufPtr)[:0]\n")
 	// Open the {"data": …} success envelope that the OpenAPI spec, the
 	// reflection path (WriteSuccess), and the generated client all agree on.
@@ -673,28 +662,25 @@ func writeGeneratedOutputBody(buf *bytes.Buffer, body *OutputBodySpec, staticSta
 	}
 	// Close the body object and the envelope.
 	buf.WriteString("\t\t\tb = append(b, '}', '}', '\\n')\n")
-	buf.WriteString("\t\t\tw.Header().Set(\"Content-Type\", \"application/json\")\n")
 	if staticStatus > 0 && body.HasSimpleStatus {
-		buf.WriteString("\t\t\tw.WriteHeader(" + strconv.Itoa(staticStatus) + ")\n")
+		buf.WriteString("\t\t\treturn jsonCodec.WriteGeneratedSuccess(w, " + strconv.Itoa(staticStatus) + ", b)\n")
 	} else {
-		buf.WriteString("\t\t\tw.WriteHeader(status)\n")
+		buf.WriteString("\t\t\treturn jsonCodec.WriteGeneratedSuccess(w, status, b)\n")
 	}
-	buf.WriteString("\t\t\t_, writeErr := w.Write(b)\n")
-	buf.WriteString("\t\t\treturn writeErr\n")
 }
 
 func writeAppendJSONValue(buf *bytes.Buffer, valueExpr, kind, indent string) {
 	switch kind {
 	case "string":
-		buf.WriteString(indent + "b = strconv.AppendQuote(b, " + valueExpr + ")\n")
+		buf.WriteString(indent + "b = jsonCodec.AppendString(b, " + valueExpr + ")\n")
 	case "bool":
-		buf.WriteString(indent + "b = strconv.AppendBool(b, " + valueExpr + ")\n")
+		buf.WriteString(indent + "b = jsonCodec.AppendBool(b, " + valueExpr + ")\n")
 	case "int":
-		buf.WriteString(indent + "b = strconv.AppendInt(b, int64(" + valueExpr + "), 10)\n")
+		buf.WriteString(indent + "b = jsonCodec.AppendInt(b, int64(" + valueExpr + "))\n")
 	case "uint":
-		buf.WriteString(indent + "b = strconv.AppendUint(b, uint64(" + valueExpr + "), 10)\n")
+		buf.WriteString(indent + "b = jsonCodec.AppendUint(b, uint64(" + valueExpr + "))\n")
 	case "float":
-		buf.WriteString(indent + "b = strconv.AppendFloat(b, float64(" + valueExpr + "), 'f', -1, 64)\n")
+		buf.WriteString(indent + "b = jsonCodec.AppendFloat(b, float64(" + valueExpr + "))\n")
 	}
 }
 
@@ -707,9 +693,22 @@ func writeFallbackWrite(buf *bytes.Buffer, route RouteSpec) {
 	buf.WriteString("\t\t\tif !ok {\n")
 	buf.WriteString("\t\t\t\treturn fmt.Errorf(\"generated codec " + route.OperationID + " expected *" + route.OutputType + "\")\n")
 	buf.WriteString("\t\t\t}\n")
+	writeGeneratedResponseNegotiation(buf, route)
 	buf.WriteString("\t\t\tw.Header().Set(\"Content-Type\", \"application/json\")\n")
 	buf.WriteString("\t\t\tw.WriteHeader(http.StatusOK)\n")
 	buf.WriteString("\t\t\treturn json.NewEncoder(w).Encode(out)\n")
+}
+
+func writeGeneratedResponseNegotiation(buf *bytes.Buffer, route RouteSpec) {
+	if len(route.ResponseContentTypes) == 0 {
+		return
+	}
+	buf.WriteString("\t\t\tif err := serverpkg.NegotiateResponseContentType(req")
+	for _, mediaType := range route.ResponseContentTypes {
+		buf.WriteString(", ")
+		buf.WriteString(strconv.Quote(mediaType))
+	}
+	buf.WriteString("); err != nil { return err }\n")
 }
 
 func nestedStructType(t types.Type) (types.Type, bool, bool) {

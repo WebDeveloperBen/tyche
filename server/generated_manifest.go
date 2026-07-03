@@ -6,15 +6,16 @@ import (
 )
 
 type GeneratedRouteMeta struct {
-	PackagePath       string
-	OperationID       string
-	Method            string
-	Path              string
-	InputType         string
-	OutputType        string
-	InputTypeKey      string
-	OutputTypeKey     string
-	HasGeneratedCodec bool
+	PackagePath          string
+	OperationID          string
+	Method               string
+	Path                 string
+	InputType            string
+	OutputType           string
+	InputTypeKey         string
+	OutputTypeKey        string
+	ResponseContentTypes []string
+	HasGeneratedCodec    bool
 }
 
 var generatedManifestRegistry struct {
@@ -46,7 +47,16 @@ func GeneratedRouteManifest() []GeneratedRouteMeta {
 	generatedManifestRegistry.mu.RLock()
 	defer generatedManifestRegistry.mu.RUnlock()
 
-	return append([]GeneratedRouteMeta(nil), generatedManifestRegistry.routes...)
+	out := make([]GeneratedRouteMeta, len(generatedManifestRegistry.routes))
+	for i, route := range generatedManifestRegistry.routes {
+		out[i] = cloneGeneratedRouteMeta(route)
+	}
+	return out
+}
+
+func cloneGeneratedRouteMeta(route GeneratedRouteMeta) GeneratedRouteMeta {
+	route.ResponseContentTypes = append([]string(nil), route.ResponseContentTypes...)
+	return route
 }
 
 func generatedRouteIdentity(route GeneratedRouteMeta) string {

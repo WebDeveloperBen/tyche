@@ -209,6 +209,7 @@ type CLIENTTYPE struct {
 	baseURL    string
 	httpClient *http.Client
 	header     http.Header
+	codec      Codec
 }
 
 // File is a single file part for multipart/form-data requests.
@@ -216,6 +217,34 @@ type File struct {
 	Name        string
 	Content     io.Reader
 	ContentType string
+}
+
+// Codec encodes request bodies and decodes successful response bodies. The
+// default is JSONCodec.
+type Codec interface {
+	ContentType() string
+	Accept() string
+	Marshal(any) ([]byte, error)
+	Unmarshal([]byte, any) error
+}
+
+// JSONCodec is the default application/json request and response codec.
+type JSONCodec struct{}
+
+func (JSONCodec) ContentType() string { return "application/json" }
+func (JSONCodec) Accept() string      { return "application/json" }
+func (JSONCodec) Marshal(v any) ([]byte, error) {
+	return json.Marshal(v)
+}
+func (JSONCodec) Unmarshal(data []byte, v any) error {
+	return json.Unmarshal(data, v)
+}
+
+func defaultCodec(codec Codec) Codec {
+	if codec == nil {
+		return JSONCodec{}
+	}
+	return codec
 }
 
 type multipartBody struct {
@@ -293,6 +322,7 @@ func New(baseURL string, opts ...Option) *CLIENTTYPE {
 		baseURL:    strings.TrimRight(baseURL, "/"),
 		httpClient: http.DefaultClient,
 		header:     http.Header{},
+		codec:      JSONCodec{},
 	}
 	for _, o := range opts {
 		o(c)
@@ -317,6 +347,12 @@ func WithBearerToken(token string) Option {
 // WithHeader sets a default header sent on every request.
 func WithHeader(key, value string) Option {
 	return func(c *CLIENTTYPE) { c.header.Set(key, value) }
+}
+
+// WithCodec sets the codec used for non-multipart request bodies and successful
+// typed response bodies. Nil resets the default JSON codec.
+func WithCodec(codec Codec) Option {
+	return func(c *CLIENTTYPE) { c.codec = defaultCodec(codec) }
 }
 
 // ProblemError is a single field-level validation problem from an error response.
@@ -381,7 +417,8 @@ func (c *CLIENTTYPE) send(ctx context.Context, method, path string, query url.Va
 				header.Set("Content-Type", contentType)
 			}
 		default:
-			buf, err := json.Marshal(body)
+			codec := defaultCodec(c.codec)
+			buf, err := codec.Marshal(body)
 			if err != nil {
 				return nil, fmt.Errorf("encode request body: %w", err)
 			}
@@ -390,7 +427,7 @@ func (c *CLIENTTYPE) send(ctx context.Context, method, path string, query url.Va
 				header = http.Header{}
 			}
 			if header.Get("Content-Type") == "" {
-				header.Set("Content-Type", "application/json")
+				header.Set("Content-Type", codec.ContentType())
 			}
 		}
 	}
@@ -400,7 +437,7 @@ func (c *CLIENTTYPE) send(ctx context.Context, method, path string, query url.Va
 	}
 	c.applyHeaders(req, header)
 	if req.Header.Get("Accept") == "" {
-		req.Header.Set("Accept", "application/json")
+		req.Header.Set("Accept", defaultCodec(c.codec).Accept())
 	}
 	return c.httpClient.Do(req)
 }
@@ -457,9 +494,18 @@ func mergeHeaders(base, extra http.Header) http.Header {
 	return merged
 }
 
-func (c *CLIENTTYPE) do(ctx context.Context, method, path string, query url.Values, header http.Header, body any, opts []CallOption) (*http.Response, []byte, error) {
+func (c *CLIENTTYPE) do(ctx context.Context, method, path string, query url.Values, header http.Header, body any, accept string, opts []CallOption) (*http.Response, []byte, error) {
 	co := resolveCallOptions(opts)
-	resp, err := c.send(ctx, method, path, query, mergeHeaders(header, co.header), body)
+	header = mergeHeaders(header, co.header)
+	if accept != "" {
+		if header == nil {
+			header = http.Header{}
+		}
+		if header.Get("Accept") == "" {
+			header.Set("Accept", accept)
+		}
+	}
+	resp, err := c.send(ctx, method, path, query, header, body)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -482,8 +528,8 @@ func parseAPIError(status int, body []byte) *APIError {
 	return e
 }
 
-func doJSON[O any](ctx context.Context, c *CLIENTTYPE, method, path string, query url.Values, header http.Header, body any, opts []CallOption) (*O, error) {
-	resp, data, err := c.do(ctx, method, path, query, header, body, opts)
+func doJSON[O any](ctx context.Context, c *CLIENTTYPE, method, path string, query url.Values, header http.Header, body any, accept string, opts []CallOption) (*O, error) {
+	resp, data, err := c.do(ctx, method, path, query, header, body, typedResponseAccept(c, accept), opts)
 	if err != nil {
 		return nil, err
 	}
@@ -494,18 +540,26 @@ func doJSON[O any](ctx context.Context, c *CLIENTTYPE, method, path string, quer
 		Data O ` + "`json:\"data\"`" + `
 	}
 	if len(data) > 0 {
-		if !isJSONResponse(resp) {
-			return nil, fmt.Errorf("expected a JSON response but got Content-Type %q", resp.Header.Get("Content-Type"))
+		if !isCodecResponse(resp, defaultCodec(c.codec)) {
+			return nil, fmt.Errorf("expected response Content-Type %q but got %q", defaultCodec(c.codec).ContentType(), resp.Header.Get("Content-Type"))
 		}
-		if err := json.Unmarshal(data, &env); err != nil {
+		if err := defaultCodec(c.codec).Unmarshal(data, &env); err != nil {
 			return nil, fmt.Errorf("decode response: %w", err)
 		}
 	}
 	return &env.Data, nil
 }
 
-func doDiscard(ctx context.Context, c *CLIENTTYPE, method, path string, query url.Values, header http.Header, body any, opts []CallOption) error {
-	resp, data, err := c.do(ctx, method, path, query, header, body, opts)
+func typedResponseAccept(c *CLIENTTYPE, operationAccept string) string {
+	codecAccept := defaultCodec(c.codec).Accept()
+	if codecAccept != "" && codecAccept != (JSONCodec{}).Accept() {
+		return codecAccept
+	}
+	return operationAccept
+}
+
+func doDiscard(ctx context.Context, c *CLIENTTYPE, method, path string, query url.Values, header http.Header, body any, accept string, opts []CallOption) error {
+	resp, data, err := c.do(ctx, method, path, query, header, body, accept, opts)
 	if err != nil {
 		return err
 	}
@@ -517,8 +571,8 @@ func doDiscard(ctx context.Context, c *CLIENTTYPE, method, path string, query ur
 
 // doBytes returns the raw success body for a response whose media type is not
 // JSON (e.g. a binary download or text payload). The envelope is not applied.
-func doBytes(ctx context.Context, c *CLIENTTYPE, method, path string, query url.Values, header http.Header, body any, opts []CallOption) ([]byte, error) {
-	resp, data, err := c.do(ctx, method, path, query, header, body, opts)
+func doBytes(ctx context.Context, c *CLIENTTYPE, method, path string, query url.Values, header http.Header, body any, accept string, opts []CallOption) ([]byte, error) {
+	resp, data, err := c.do(ctx, method, path, query, header, body, accept, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -528,19 +582,28 @@ func doBytes(ctx context.Context, c *CLIENTTYPE, method, path string, query url.
 	return data, nil
 }
 
-// isJSONResponse reports whether resp's Content-Type is a JSON media type (or
-// absent). It lets doJSON fail with a clear error rather than a cryptic unmarshal
-// error when a server returns an unexpected content type on a 2xx.
-func isJSONResponse(resp *http.Response) bool {
-	ct := resp.Header.Get("Content-Type")
-	if ct == "" {
+// isCodecResponse reports whether resp's Content-Type matches the configured
+// response codec. The default JSON codec also accepts vendor +json media types.
+func isCodecResponse(resp *http.Response, codec Codec) bool {
+	got := mediaType(resp.Header.Get("Content-Type"))
+	if got == "" {
 		return true
 	}
-	if i := strings.IndexByte(ct, ';'); i >= 0 {
-		ct = ct[:i]
+	want := mediaType(defaultCodec(codec).ContentType())
+	if want == "" {
+		return true
 	}
-	ct = strings.TrimSpace(ct)
-	return ct == "application/json" || strings.HasSuffix(ct, "+json")
+	if got == want {
+		return true
+	}
+	return want == "application/json" && strings.HasSuffix(got, "+json")
+}
+
+func mediaType(contentType string) string {
+	if i := strings.IndexByte(contentType, ';'); i >= 0 {
+		contentType = contentType[:i]
+	}
+	return strings.ToLower(strings.TrimSpace(contentType))
 }
 
 // fmtParam renders a path/query/header value as a string.
