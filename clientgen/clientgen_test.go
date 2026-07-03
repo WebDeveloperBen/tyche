@@ -174,7 +174,7 @@ func TestGenerate_ExpectedFilesAndSymbols(t *testing.T) {
 		"body.addFile(\"avatar\", *in.Avatar)",
 		"func (c *Client) PutBlob(ctx context.Context, in *PutBlobInput, opts ...CallOption) error",
 		`return doBytes(ctx, c, http.MethodGet, path, nil, nil, nil, "application/pdf", opts)`,
-		`return doJSON[StartJobOutput](ctx, c, http.MethodPost, path, nil, nil, nil, "application/json", opts)`,
+		`return doJSON[StartJobOutput](ctx, c, http.MethodPost, path, nil, nil, nil, opts)`,
 	} {
 		if !strings.Contains(nops, want) {
 			t.Errorf("operations.go missing %q", want)
@@ -449,8 +449,17 @@ import (
 
 type vendorCodec struct{}
 
-func (vendorCodec) ContentType() string { return "application/vnd.tyche+json" }
-func (vendorCodec) Accept() string      { return "application/vnd.tyche+json" }
+func (vendorCodec) MediaType() string { return "application/vnd.tyche+json" }
+func (vendorCodec) MatchesResponse(contentType string) bool {
+	if i := strings.IndexByte(contentType, ';'); i >= 0 {
+		contentType = contentType[:i]
+	}
+	contentType = strings.ToLower(strings.TrimSpace(contentType))
+	if contentType == "" {
+		return true
+	}
+	return contentType == "application/vnd.tyche+json" || contentType == "application/json"
+}
 func (vendorCodec) Marshal(v any) ([]byte, error) {
 	return json.Marshal(v)
 }

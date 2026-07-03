@@ -384,11 +384,15 @@ Operations with `multipart/form-data` request bodies generate `form`, `file`,
 and `files` input fields. File inputs use the generated `client.File` type,
 which carries the part filename, content reader, and optional content type.
 Non-multipart request/response encoding goes through the generated `Codec`
-interface; `client.WithCodec(...)` can swap the default `application/json`
-codec for a compatible JSON vendor media type or another implementation. By
-default, generated methods send `Accept` from each operation's documented
-success media types, so raw downloads request their actual media type rather
-than JSON.
+interface; `client.WithCodec(...)` can swap the default `JSONCodec` for a
+compatible JSON vendor media type or another implementation. The codec owns
+its own `MediaType()` and `MatchesResponse(...)`, so a vendor JSON codec
+that wants to accept plain `application/json` responses (or vice versa)
+encodes that decision in the codec rather than in the runtime. By default,
+raw downloads and other non-envelope success responses send `Accept` from
+each operation's documented success media types, so a `/report` operation
+returns `[]byte` against `Accept: application/pdf` instead of being decoded
+through the codec.
 
 By default, structurally identical schemas share one generated Go type. Use
 `--type-naming operation-scoped` when distinct operations should keep distinct

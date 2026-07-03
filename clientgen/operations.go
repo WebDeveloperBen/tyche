@@ -313,7 +313,7 @@ func emitMethod(b *strings.Builder, clientName string, o *operation) {
 	case o.Stream:
 		fmt.Fprintf(b, "\treturn doStream[%s](ctx, c, %s, path, %s, %s, %s, opts)\n", o.EventType, httpMethod, queryArg, headerArg, bodyArg)
 	case o.OutputType != "":
-		fmt.Fprintf(b, "\treturn doJSON[%s](ctx, c, %s, path, %s, %s, %s, %s, opts)\n", o.OutputType, httpMethod, queryArg, headerArg, bodyArg, accept)
+		fmt.Fprintf(b, "\treturn doJSON[%s](ctx, c, %s, path, %s, %s, %s, opts)\n", o.OutputType, httpMethod, queryArg, headerArg, bodyArg)
 	case o.Bytes:
 		fmt.Fprintf(b, "\treturn doBytes(ctx, c, %s, path, %s, %s, %s, %s, opts)\n", httpMethod, queryArg, headerArg, bodyArg, accept)
 	default:
