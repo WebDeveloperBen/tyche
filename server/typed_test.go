@@ -52,24 +52,32 @@ type sharedStatusOutput struct {
 }
 
 type uploadInput struct {
+	Avatar *multipart.FileHeader   `file:"avatar"`
 	Title  string                  `form:"title" validate:"min=3"`
 	Tags   []string                `form:"tags,omitempty"`
-	Count  int                     `form:"count"`
-	Avatar *multipart.FileHeader   `file:"avatar"`
 	Docs   []*multipart.FileHeader `files:"docs,omitempty"`
+	Count  int                     `form:"count"`
 }
 
 type uploadOutput struct {
 	Body struct {
 		Title      string `json:"title"`
+		AvatarName string `json:"avatarName"`
 		TagCount   int    `json:"tagCount"`
 		Count      int    `json:"count"`
-		AvatarName string `json:"avatarName"`
 		DocCount   int    `json:"docCount"`
 	} `body:"true"`
 }
 
 var typedTestCodecsOnce sync.Once
+
+// These guard the two codecs registered inline inside individual tests, so
+// `go test -count=2` (which reruns tests in one process) doesn't re-register
+// and trip RegisterGeneratedCodec's duplicate-identity panic.
+var (
+	limitedUserCodecOnce sync.Once
+	deleteUserCodecOnce  sync.Once
+)
 
 func registerTypedTestCodecs() {
 	typedTestCodecsOnce.Do(func() {
@@ -539,9 +547,9 @@ func TestRegister_MultipartFormRouteAndOpenAPI(t *testing.T) {
 	var resp struct {
 		Data struct {
 			Title      string `json:"title"`
+			AvatarName string `json:"avatarName"`
 			TagCount   int    `json:"tagCount"`
 			Count      int    `json:"count"`
-			AvatarName string `json:"avatarName"`
 			DocCount   int    `json:"docCount"`
 		} `json:"data"`
 	}
@@ -979,24 +987,26 @@ func TestParseRequest_EnforcesRouterBodyLimit(t *testing.T) {
 		} `body:"true"`
 	}
 
-	server.RegisterGeneratedCodec(server.GeneratedRouteMeta{
-		PackagePath:       "github.com/webdeveloperben/tyche/server_test",
-		OperationID:       "limited-user",
-		Method:            http.MethodPost,
-		Path:              "/users",
-		HasGeneratedCodec: true,
-	}, server.GeneratedRouteCodec{
-		Parse: func(req *http.Request) (any, error) {
-			var in input
-			if err := server.DecodeRequestJSONBodyFast(req, &in); err != nil {
-				return nil, err
-			}
-			return &in, nil
-		},
-		Write: func(w http.ResponseWriter, req *http.Request, out any) error {
-			typed, _ := out.(*output)
-			return server.WriteSuccess(w, http.StatusOK, typed.Body)
-		},
+	limitedUserCodecOnce.Do(func() {
+		server.RegisterGeneratedCodec(server.GeneratedRouteMeta{
+			PackagePath:       "github.com/webdeveloperben/tyche/server_test",
+			OperationID:       "limited-user",
+			Method:            http.MethodPost,
+			Path:              "/users",
+			HasGeneratedCodec: true,
+		}, server.GeneratedRouteCodec{
+			Parse: func(req *http.Request) (any, error) {
+				var in input
+				if err := server.DecodeRequestJSONBodyFast(req, &in); err != nil {
+					return nil, err
+				}
+				return &in, nil
+			},
+			Write: func(w http.ResponseWriter, req *http.Request, out any) error {
+				typed, _ := out.(*output)
+				return server.WriteSuccess(w, http.StatusOK, typed.Body)
+			},
+		})
 	})
 
 	server.Register(api, server.Operation{
@@ -1063,21 +1073,23 @@ func TestRegister_NoBodyStatusDocsAndRuntime(t *testing.T) {
 	router := server.NewAPI(server.NewServeMuxAdapter())
 	api := router.Group("/api")
 
-	server.RegisterGeneratedCodec(server.GeneratedRouteMeta{
-		PackagePath:       "github.com/webdeveloperben/tyche/server_test",
-		OperationID:       "delete-user",
-		Method:            http.MethodDelete,
-		Path:              "/users/:id",
-		HasGeneratedCodec: true,
-	}, server.GeneratedRouteCodec{
-		Parse: func(req *http.Request) (any, error) {
-			return &getUserInput{ID: req.PathValue("id")}, nil
-		},
-		Write: func(w http.ResponseWriter, req *http.Request, out any) error {
-			typed, _ := out.(*noBodyOutput)
-			w.WriteHeader(typed.Status)
-			return nil
-		},
+	deleteUserCodecOnce.Do(func() {
+		server.RegisterGeneratedCodec(server.GeneratedRouteMeta{
+			PackagePath:       "github.com/webdeveloperben/tyche/server_test",
+			OperationID:       "delete-user",
+			Method:            http.MethodDelete,
+			Path:              "/users/:id",
+			HasGeneratedCodec: true,
+		}, server.GeneratedRouteCodec{
+			Parse: func(req *http.Request) (any, error) {
+				return &getUserInput{ID: req.PathValue("id")}, nil
+			},
+			Write: func(w http.ResponseWriter, req *http.Request, out any) error {
+				typed, _ := out.(*noBodyOutput)
+				w.WriteHeader(typed.Status)
+				return nil
+			},
+		})
 	})
 
 	server.Register(api, server.Operation{

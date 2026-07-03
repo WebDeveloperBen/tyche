@@ -3,6 +3,7 @@ package server_test
 import (
 	"context"
 	"net/http"
+	"sync"
 	"testing"
 
 	"github.com/webdeveloperben/tyche/server"
@@ -16,7 +17,17 @@ type setupOutput struct {
 	Name string `json:"name"`
 }
 
+// setupCodecsOnce guards the global codec registry so this file's codec is
+// registered exactly once per test binary. RegisterGeneratedCodec panics on a
+// duplicate identity, so without this guard `go test -count=2` (which reruns
+// tests in the same process) would panic on the second pass.
+var setupCodecsOnce sync.Once
+
 func registerSetupTestCodecs() {
+	setupCodecsOnce.Do(registerSetupTestCodecsOnce)
+}
+
+func registerSetupTestCodecsOnce() {
 	server.RegisterGeneratedCodec(server.GeneratedRouteMeta{
 		PackagePath:       "github.com/webdeveloperben/tyche/server",
 		OperationID:       "dup",

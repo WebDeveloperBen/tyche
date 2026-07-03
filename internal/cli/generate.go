@@ -13,17 +13,29 @@ type GenerateCmd struct {
 func (c *GenerateCmd) Run(g *GlobalFlags) error {
 	p := g.printer()
 
+	// LoadConfig honours --config / TYCHE_CONFIG and emits the "using
+	// config ..." banner. We reuse the loaded server block below so
+	// `generate` applies the configured patterns, matching build/run/test.
 	loaded, err := app.LoadConfig(g.loadOptions(p))
 	if err != nil {
 		return Exit(1, err)
 	}
-	_ = loaded // file is informational; the patterns come from flags + config
 
 	root, err := app.ResolveRoot(g.Root)
 	if err != nil {
 		return Exit(1, err)
 	}
-	if err := app.Generate(root, c.Patterns); err != nil {
+
+	fallback := c.Patterns
+	if len(fallback) == 0 {
+		fallback = []string{"./..."}
+	}
+	patterns := fallback
+	if loaded != nil && loaded.File != nil && loaded.File.Server != nil {
+		patterns, _ = loaded.File.Server.ApplyServer(fallback)
+	}
+
+	if err := app.Generate(root, patterns); err != nil {
 		return Exit(1, err)
 	}
 	return p.Result("generated route codecs into " + root)

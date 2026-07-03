@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/webdeveloperben/tyche/internal/app"
 )
@@ -20,9 +21,11 @@ func (c *RunCmd) Run(g *GlobalFlags) error {
 		return Exit(1, err)
 	}
 	if err := app.WithWorktree(app.WorktreeOptions{
-		Root:     root,
-		Patterns: c.Patterns,
-		GoArgs:   []string{"run", c.Package},
+		Root:       root,
+		Patterns:   c.Patterns,
+		GoArgs:     []string{"run", c.Package},
+		ConfigPath: g.Config,
+		EnvConfig:  os.Getenv("TYCHE_CONFIG"),
 	}); err != nil {
 		return Exit(1, err)
 	}

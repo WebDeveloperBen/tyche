@@ -13,14 +13,14 @@ import (
 // in components.schemas — collapses to a single Go type with a clean name.
 type typeSet struct {
 	doc            *Document
-	naming         TypeNamingStrategy
-	byKey          map[string]string // naming-strategy key -> assigned Go type name
+	byKey          map[string]string
+	taken          map[string]bool
+	componentNames map[string]string
+	building       map[*Schema]string
 	structs        []*structType
 	enums          []*enumType
-	taken          map[string]bool
-	componentNames map[string]string // structural key -> preferred name from components.schemas
-	building       map[*Schema]string
 	notices        []string
+	naming         TypeNamingStrategy
 }
 
 type structField struct {

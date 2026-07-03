@@ -6,10 +6,16 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/webdeveloperben/tyche/server"
 )
+
+// confCodecOnce guards the global codec registry so the "conf-codec" route is
+// registered exactly once per test binary; RegisterGeneratedCodec panics on a
+// duplicate, which would otherwise break `go test -count=2`.
+var confCodecOnce sync.Once
 
 // These tests pin the no-codegen reflection fallback (ParseRequest +
 // writeReflectionResponse) to the same response contract a generated codec
@@ -150,26 +156,28 @@ func TestReflectionFallback_Conformance(t *testing.T) {
 		// the bytes servergen emits (hand-appended {"data":{…}} + status +
 		// headers). Register the same types once with such a codec and once
 		// without (reflection), then diff the full responses.
-		server.RegisterGeneratedCodec(server.GeneratedRouteMeta{
-			OperationID: "conf-codec", Method: http.MethodGet, Path: "/thing/:id", HasGeneratedCodec: true,
-		}, server.GeneratedRouteCodec{
-			Parse: func(req *http.Request) (any, error) {
-				return &confInput{ID: req.PathValue("id")}, nil
-			},
-			Write: func(w http.ResponseWriter, _ *http.Request, value any) error {
-				out := value.(*confOutput)
-				w.Header().Set("ETag", out.ETag)
-				b := make([]byte, 0, 64)
-				b = append(b, `{"data":{"message":`...)
-				b = strconv.AppendQuote(b, out.Body.Message)
-				b = append(b, `,"count":`...)
-				b = strconv.AppendInt(b, int64(out.Body.Count), 10)
-				b = append(b, '}', '}', '\n')
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(out.Status)
-				_, err := w.Write(b)
-				return err
-			},
+		confCodecOnce.Do(func() {
+			server.RegisterGeneratedCodec(server.GeneratedRouteMeta{
+				OperationID: "conf-codec", Method: http.MethodGet, Path: "/thing/:id", HasGeneratedCodec: true,
+			}, server.GeneratedRouteCodec{
+				Parse: func(req *http.Request) (any, error) {
+					return &confInput{ID: req.PathValue("id")}, nil
+				},
+				Write: func(w http.ResponseWriter, _ *http.Request, value any) error {
+					out := value.(*confOutput)
+					w.Header().Set("ETag", out.ETag)
+					b := make([]byte, 0, 64)
+					b = append(b, `{"data":{"message":`...)
+					b = strconv.AppendQuote(b, out.Body.Message)
+					b = append(b, `,"count":`...)
+					b = strconv.AppendInt(b, int64(out.Body.Count), 10)
+					b = append(b, '}', '}', '\n')
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(out.Status)
+					_, err := w.Write(b)
+					return err
+				},
+			})
 		})
 
 		codecAPI := server.NewAPI(server.NewServeMuxAdapter())

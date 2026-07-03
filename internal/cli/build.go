@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"os"
 
 	"github.com/webdeveloperben/tyche/internal/app"
 )
@@ -28,9 +29,11 @@ func (c *BuildCmd) Run(g *GlobalFlags) error {
 	out := app.ResolvePath(root, c.Output)
 	args := []string{"build", "-o", out, c.Package}
 	if err := app.WithWorktree(app.WorktreeOptions{
-		Root:     root,
-		Patterns: c.Patterns,
-		GoArgs:   args,
+		Root:       root,
+		Patterns:   c.Patterns,
+		GoArgs:     args,
+		ConfigPath: g.Config,
+		EnvConfig:  os.Getenv("TYCHE_CONFIG"),
 	}); err != nil {
 		return Exit(1, err)
 	}

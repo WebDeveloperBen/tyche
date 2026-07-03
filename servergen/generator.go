@@ -70,8 +70,8 @@ type BindFieldSpec struct {
 	Kind         string
 	ElemTypeExpr string
 	ElemKind     string
-	ElemPointer  bool
 	Rules        validation.FieldRules
+	ElemPointer  bool
 	Pointer      bool
 	Required     bool
 	Slice        bool

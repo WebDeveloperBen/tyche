@@ -23,31 +23,44 @@ import (
 // drive help text, flag binding, env-var lookup, and argument validation.
 // Kong resolves precedence: command line > struct default > env var.
 type CLI struct {
-	GlobalFlags
-	Init       InitCmd       `cmd:"" help:"Scaffold a tyche.json config file in the project root."`
-	Config     ConfigCmd     `cmd:"" help:"Inspect and validate the resolved tyche.json."`
-	Generate   GenerateCmd   `cmd:"" help:"Generate typed route codecs into the working tree."`
-	Clean      CleanCmd      `cmd:"" help:"Remove generated route codec files from the working tree."`
-	Build      BuildCmd      `cmd:"" help:"Build a package from a temporary generated worktree."`
-	Run        RunCmd        `cmd:"" help:"Run a package from a temporary generated worktree."`
-	Test       TestCmd       `cmd:"" help:"Run tests from a temporary generated worktree."`
-	Client     ClientCmd     `cmd:"" help:"Regenerate the typed client from a tyche OpenAPI spec."`
 	Version    VersionCmd    `cmd:"" help:"Print the tyche version and exit."`
+	Client     ClientCmd     `cmd:"" help:"Regenerate the typed client from a tyche OpenAPI spec."`
 	Completion CompletionCmd `cmd:"" hidden:"" help:"Print shell completion script (bash|zsh|fish|powershell)."`
+	GlobalFlags
+	Init     InitCmd     `cmd:"" help:"Scaffold a tyche.json config file in the project root."`
+	Build    BuildCmd    `cmd:"" help:"Build a package from a temporary generated worktree."`
+	Run      RunCmd      `cmd:"" help:"Run a package from a temporary generated worktree."`
+	Generate GenerateCmd `cmd:"" help:"Generate typed route codecs into the working tree."`
+	Clean    CleanCmd    `cmd:"" help:"Remove generated route codec files from the working tree."`
+	Test     TestCmd     `cmd:"" help:"Run tests from a temporary generated worktree."`
+	Config   ConfigCmd   `cmd:"" help:"Inspect and validate the resolved tyche.json."`
 }
 
 // GlobalFlags are the flags inherited by every subcommand.
 type GlobalFlags struct {
+	outW   io.Writer
+	errW   io.Writer
 	Config string `help:"Path to a tyche.json config file (overrides discovery)." short:"c" env:"TYCHE_CONFIG"`
 	Root   string `help:"Project root (default: current directory)." short:"r" default:""`
+	Format string `help:"Output format: human (default), json, or quiet." enum:"human,json,quiet" default:"human"`
 	Quiet  bool   `help:"Suppress the 'using config ...' info line." short:"q"`
-	Format string `help:"Output format: human (default), json, or quiet." enum:"human,json,quiet" default:"human" name:"format"`
 }
 
-// stdout / stderr let tests inject buffers; in production they default to
-// the process's actual streams.
-func (g *GlobalFlags) stdout() io.Writer { return os.Stdout }
-func (g *GlobalFlags) stderr() io.Writer { return os.Stderr }
+// stdout / stderr return the streams to write to: the test-injected
+// overrides when set, otherwise the process's actual streams.
+func (g *GlobalFlags) stdout() io.Writer {
+	if g.outW != nil {
+		return g.outW
+	}
+	return os.Stdout
+}
+
+func (g *GlobalFlags) stderr() io.Writer {
+	if g.errW != nil {
+		return g.errW
+	}
+	return os.Stderr
+}
 
 // loadOptions translates CLI flags into app.LoadOptions. The Printer is
 // used as the info callback so "using config ..." lines land in the right
@@ -68,14 +81,21 @@ func (g *GlobalFlags) loadOptions(p output.Printer) app.LoadOptions {
 // current stdout/stderr. Subcommands call this once and pass the result
 // to their Run methods.
 func (g *GlobalFlags) printer() output.Printer {
-	return output.New(output.ParseMode(g.Format), g.stdout(), g.stderr())
+	return g.printerFor(g.Format)
+}
+
+// printerFor is printer() with an explicit format override, so a
+// subcommand can select a mode (e.g. `config show --json`) without
+// mutating the shared GlobalFlags.
+func (g *GlobalFlags) printerFor(format string) output.Printer {
+	return output.New(output.ParseMode(format), g.stdout(), g.stderr())
 }
 
 // ExitError is the structured error type for command failures. The
 // process main() inspects it to set the right exit code.
 type ExitError struct {
-	Code int
 	Err  error
+	Code int
 }
 
 func (e *ExitError) Error() string { return e.Err.Error() }
@@ -91,25 +111,28 @@ func Exit(code int, err error) error {
 // Run is the entry point. It parses args, runs the resolved command, and
 // returns the exit code. main() in cmd/tyche calls this and exits the
 // process with the result.
-func Run(args []string) (int, error) {
-	// Catch the panic that Kong's Exit() callback raises, normalise
-	// the code to 0 for --help and 2 for parse errors, and return
-	// cleanly. main() also recovers this in production to set os.Exit.
+func Run(args []string) (code int, err error) {
+	// Catch the panic that Kong's Exit() callback raises and normalise the
+	// code to 0 for --help / --version and 2 for parse errors. Anything
+	// that is not an *ExitPanic is a genuine bug (nil deref, a panic inside
+	// Kong, ...) — we re-panic it so main()'s recover turns it into a
+	// non-zero exit. Swallowing it here would make a crash look like
+	// success (exit 0), which is exactly what we must not do.
 	defer func() {
 		if r := recover(); r != nil {
-			if ep, ok := r.(*ExitPanic); ok {
-				// Kong chooses 80 for parse / usage errors; the
-				// tyche contract is POSIX-exit-2 for that case, and
-				// 0 for --help / --version. Re-panic with the
-				// normalised code so the test recover (and main's
-				// recover) see the right value.
-				switch ep.Code {
-				case 0:
-					panic(&ExitPanic{Code: 0})
-				default:
-					panic(&ExitPanic{Code: 2})
-				}
+			ep, ok := r.(*ExitPanic)
+			if !ok {
+				panic(r)
 			}
+			// Kong chooses 80 for parse / usage errors; the tyche
+			// contract is POSIX-exit-2 for that case, and 0 for
+			// --help / --version.
+			if ep.Code == 0 {
+				code = 0
+			} else {
+				code = 2
+			}
+			err = nil
 		}
 	}()
 	// `tyche` with no args prints help and exits 0, matching the prior
@@ -165,8 +188,12 @@ func run(args []string) (int, error) {
 		// FatalIfErrorf (which honours UsageOnError), then force the
 		// exit code to 2 (POSIX usage-error) by panicking with our
 		// own ExitPanic — overriding whatever Kong's exit code logic
-		// would have chosen. The recover in main() handles the panic.
+		// would have chosen. The recover in Run()/main() handles the
+		// panic. FatalIfErrorf already panics through our kong.Exit
+		// override, so the explicit panic below is a defensive backstop
+		// that keeps the contract even if Kong's behaviour changes.
 		parser.FatalIfErrorf(err)
+		panic(&ExitPanic{Code: 2})
 	}
 	if err := kctx.Run(&cli.GlobalFlags); err != nil {
 		var exitErr *ExitError
@@ -208,9 +235,15 @@ func runHelp(_ []string) (int, error) {
 		return 2, err
 	}
 	defer func() {
-		// The help flag has called Exit(0); if anything below this
-		// line panicked, recover and return cleanly.
-		_ = recover()
+		// The help flag calls our no-op kong.Exit, so Parse should
+		// return normally. Guard against a stray *ExitPanic only;
+		// any other panic is a real bug and must propagate so main()
+		// can report it as a non-zero exit rather than a clean 0.
+		if r := recover(); r != nil {
+			if _, ok := r.(*ExitPanic); !ok {
+				panic(r)
+			}
+		}
 	}()
 	_, _ = parser.Parse([]string{"--help"})
 	return 0, nil

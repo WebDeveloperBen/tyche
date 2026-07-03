@@ -80,12 +80,9 @@ func TestPrompt_AskDefaultReturnsAnswer(t *testing.T) {
 	}
 }
 
-func TestPrompt_AskDefaultsToStdio(t *testing.T) {
-	// Prompt with zero-value fields reads from os.Stdin and writes to
-	// os.Stdout. We don't actually want to consume stdin in a test;
-	// instead, set both fields to a buffer to confirm zero-value
-	// fields do not cause a nil-pointer panic when other fields are
-	// partially set.
+func TestPrompt_AskWithExplicitReaderWriter(t *testing.T) {
+	// With both fields set to in-memory streams, Ask reads the line from
+	// In and writes the question to Out — no stdio involved.
 	var out bytes.Buffer
 	p := Prompt{In: strings.NewReader("hello\n"), Out: &out}
 	got, err := p.Ask("Q?")

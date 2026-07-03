@@ -1,7 +1,10 @@
 package cli
 
 import (
+	"fmt"
+
 	"github.com/webdeveloperben/tyche/internal/app"
+	"github.com/webdeveloperben/tyche/internal/output"
 )
 
 // ClientCmd is `tyche client`. It regenerates the typed Go client from
@@ -68,8 +71,10 @@ func (c *ClientCmd) Run(g *GlobalFlags) error {
 	if err != nil {
 		return Exit(1, err)
 	}
-	return p.Result(map[string]any{
-		"out_dir":    res.OutDir,
-		"file_count": res.FileCount,
-	})
+	// JSON consumers get the typed result (out_dir, file_count); human and
+	// quiet callers get a one-line summary instead of a raw Go map.
+	if output.ParseMode(g.Format) == output.ModeJSON {
+		return p.Result(res)
+	}
+	return p.Result(fmt.Sprintf("generated %d files into %s", res.FileCount, res.OutDir))
 }
