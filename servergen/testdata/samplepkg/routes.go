@@ -2,6 +2,7 @@ package samplepkg
 
 import (
 	"context"
+	"mime/multipart"
 	"net/http"
 	"time"
 
@@ -81,6 +82,17 @@ type FlatThingResponse struct {
 	} `body:"true"`
 }
 
+type UploadThingRequest struct {
+	Title string                `form:"title"`
+	File  *multipart.FileHeader `file:"file"`
+}
+
+type UploadThingResponse struct {
+	Body struct {
+		OK bool `json:"ok"`
+	} `body:"true"`
+}
+
 func RegisterRoutes(grp *server.APIGroup, store Store) {
 	server.Register(grp, server.Operation{
 		OperationID: "get-thing",
@@ -143,6 +155,17 @@ func RegisterRoutes(grp *server.APIGroup, store Store) {
 	}, func(ctx context.Context, input *FlatThingRequest) (*FlatThingResponse, error) {
 		out := &FlatThingResponse{}
 		out.Body.OK = input.Body.Kind != ""
+		return out, nil
+	})
+
+	server.Register(grp, server.Operation{
+		OperationID: "upload-thing",
+		Method:      http.MethodPost,
+		Path:        "/things/upload",
+		Summary:     "Upload thing",
+	}, func(ctx context.Context, input *UploadThingRequest) (*UploadThingResponse, error) {
+		out := &UploadThingResponse{}
+		out.Body.OK = input.Title != "" && input.File != nil
 		return out, nil
 	})
 }

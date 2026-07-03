@@ -15,11 +15,11 @@ func TestLoadRoutes(t *testing.T) {
 		t.Fatalf("LoadRoutes failed: %v", err)
 	}
 
-	if len(routes) != 11 {
-		t.Fatalf("expected 11 routes, got %d", len(routes))
+	if len(routes) != 12 {
+		t.Fatalf("expected 12 routes, got %d", len(routes))
 	}
 
-	var route, bodyRoute, bulkRoute, unsupportedRoute, flatRoute servergen.RouteSpec
+	var route, bodyRoute, bulkRoute, unsupportedRoute, flatRoute, uploadRoute servergen.RouteSpec
 	for _, candidate := range routes {
 		switch candidate.OperationID {
 		case "get-thing":
@@ -32,6 +32,8 @@ func TestLoadRoutes(t *testing.T) {
 			unsupportedRoute = candidate
 		case "flat-thing":
 			flatRoute = candidate
+		case "upload-thing":
+			uploadRoute = candidate
 		}
 	}
 	if route.OperationID != "get-thing" {
@@ -100,6 +102,12 @@ func TestLoadRoutes(t *testing.T) {
 	}
 	if flatRoute.InputBind.Body == nil || len(flatRoute.InputBind.Body.Fields) != 4 {
 		t.Fatalf("expected flat generated body binding, got %#v", flatRoute.InputBind.Body)
+	}
+	if uploadRoute.OperationID != "upload-thing" {
+		t.Fatalf("expected upload-thing route, got %#v", routes)
+	}
+	if uploadRoute.InputBind.Manual {
+		t.Fatalf("expected multipart route input binding to require runtime fallback, got %#v", uploadRoute.InputBind)
 	}
 }
 
@@ -197,6 +205,7 @@ func TestGeneratePackageManifest(t *testing.T) {
 		`OperationID: "bulk-create-thing"`,
 		`OperationID: "unsupported-thing"`,
 		`OperationID: "flat-thing"`,
+		`OperationID: "upload-thing"`,
 		`HasGeneratedCodec: false`,
 		// Success responses must be wrapped in the {"data": …} envelope that
 		// the OpenAPI spec, servertest.DecodeData, and the generated client all
@@ -222,5 +231,10 @@ func TestGeneratePackageManifest(t *testing.T) {
 		PackagePath: "github.com/webdeveloperben/tyche/servergen/testdata/samplepkg",
 		OperationID: "unsupported-thing"`) {
 		t.Fatalf("expected unsupported route to skip generated codec registration\n%s", text)
+	}
+	if strings.Contains(text, `RegisterGeneratedCodec(serverpkg.GeneratedRouteMeta{
+		PackagePath: "github.com/webdeveloperben/tyche/servergen/testdata/samplepkg",
+		OperationID: "upload-thing"`) {
+		t.Fatalf("expected multipart route to skip generated codec registration\n%s", text)
 	}
 }

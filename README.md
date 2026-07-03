@@ -148,8 +148,10 @@ lives in `server/adapter_spike_test.go` to copy from.
 ## Typed routes and generated codecs
 
 Register a handler as `func(ctx, *In) (*Out, error)`. Input fields are bound from
-`path`, `query`, `header`, and `cookie` tags plus a JSON body (`Body` field or a
-`body` tag); output fields map to a JSON body, response headers, and status.
+`path`, `query`, `header`, and `cookie` tags plus either a JSON body (`Body`
+field, `body` tag, or JSON-tagged fields) or a multipart form body (`form`,
+`file`, and `files` tags). Output fields map to a JSON body, response headers,
+and status.
 
 By default this runs through a reflection binder — no codegen step, so iterating
 with `go run` is friction-free. `servergen` then inspects each
@@ -160,6 +162,10 @@ SQL. The generated codec is registered in an `init()` and picked up
 automatically; when present it replaces the reflection path for that route. Both
 paths produce byte-identical responses, so codegen is a pure performance
 optimization you reach for in production, not a prerequisite.
+
+Multipart routes currently use the reflection request binder even when
+`servergen` is run; servergen marks those routes as runtime-fallback until
+generated multipart codecs are implemented.
 
 Successful responses are wrapped in a `{"data": …}` envelope; errors are RFC
 9457 `application/problem+json`.

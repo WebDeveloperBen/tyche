@@ -3,6 +3,7 @@ package validation
 import (
 	"container/list"
 	"fmt"
+	"mime/multipart"
 	"reflect"
 	"sync"
 )
@@ -99,6 +100,9 @@ func buildStructSpec(t reflect.Type) (*StructSpec, error) {
 	if t.Kind() != reflect.Struct || isScalarStruct(t) {
 		return spec, nil
 	}
+	if err := validateBodyModeCompatibility(t); err != nil {
+		return nil, err
+	}
 
 	spec.Fields = make([]FieldSpec, 0, t.NumField())
 	for i := 0; i < t.NumField(); i++ {
@@ -112,6 +116,9 @@ func buildStructSpec(t reflect.Type) (*StructSpec, error) {
 			return nil, fmt.Errorf("%s: %w", f.Name, err)
 		}
 		if err := validateRuleCompatibility(f, rules); err != nil {
+			return nil, err
+		}
+		if err := validateMultipartFieldCompatibility(f); err != nil {
 			return nil, err
 		}
 
@@ -156,6 +163,27 @@ func buildStructSpec(t reflect.Type) (*StructSpec, error) {
 	return spec, nil
 }
 
+func validateBodyModeCompatibility(t reflect.Type) error {
+	var hasMultipart bool
+	var hasJSONBody bool
+	for i := 0; i < t.NumField(); i++ {
+		f := t.Field(i)
+		if !f.IsExported() {
+			continue
+		}
+		if HasMultipartTag(f) {
+			hasMultipart = true
+		}
+		if f.Tag.Get("body") != "" || f.Name == "Body" || IsJSONBodyField(f) {
+			hasJSONBody = true
+		}
+	}
+	if hasMultipart && hasJSONBody {
+		return fmt.Errorf("%s: multipart form/file fields cannot be combined with JSON body fields", t.Name())
+	}
+	return nil
+}
+
 func IndirectType(t reflect.Type) reflect.Type {
 	if t == nil {
 		return nil
@@ -172,7 +200,11 @@ func HasParamTag(f reflect.StructField) bool {
 
 func IsJSONBodyField(f reflect.StructField) bool {
 	_, ok := JSONFieldName(f)
-	return ok && !HasParamTag(f)
+	return ok && !HasParamTag(f) && !HasMultipartTag(f)
+}
+
+func HasMultipartTag(f reflect.StructField) bool {
+	return f.Tag.Get("form") != "" || f.Tag.Get("file") != "" || f.Tag.Get("files") != ""
 }
 
 func fieldNameForValidation(f reflect.StructField) string {
@@ -185,6 +217,12 @@ func fieldNameForValidation(f reflect.StructField) string {
 		return TagName(f.Tag.Get("header"))
 	case f.Tag.Get("cookie") != "":
 		return TagName(f.Tag.Get("cookie"))
+	case f.Tag.Get("form") != "":
+		return TagName(f.Tag.Get("form"))
+	case f.Tag.Get("file") != "":
+		return TagName(f.Tag.Get("file"))
+	case f.Tag.Get("files") != "":
+		return TagName(f.Tag.Get("files"))
 	default:
 		if name, ok := JSONFieldName(f); ok {
 			return name
@@ -203,6 +241,12 @@ func fieldRequiredByValue(f reflect.StructField) bool {
 		return FieldRequired(f, "header")
 	case f.Tag.Get("cookie") != "":
 		return FieldRequired(f, "cookie")
+	case f.Tag.Get("form") != "":
+		return FieldRequired(f, "form")
+	case f.Tag.Get("file") != "":
+		return FieldRequired(f, "file")
+	case f.Tag.Get("files") != "":
+		return FieldRequired(f, "files")
 	case f.Tag.Get("body") != "" || f.Name == "Body":
 		return FieldRequired(f, "json")
 	default:
@@ -261,8 +305,35 @@ func validateRuleCompatibility(f reflect.StructField, rules FieldRules) error {
 	return nil
 }
 
+func validateMultipartFieldCompatibility(f reflect.StructField) error {
+	switch {
+	case f.Tag.Get("file") != "":
+		if f.Type != reflect.TypeFor[*multipart.FileHeader]() {
+			return fmt.Errorf("%s: file fields must use *multipart.FileHeader", f.Name)
+		}
+	case f.Tag.Get("files") != "":
+		if f.Type != reflect.TypeFor[[]*multipart.FileHeader]() {
+			return fmt.Errorf("%s: files fields must use []*multipart.FileHeader", f.Name)
+		}
+	case f.Tag.Get("form") != "":
+		t := IndirectType(f.Type)
+		if t.Kind() == reflect.Slice {
+			t = IndirectType(t.Elem())
+		}
+		switch t.Kind() {
+		case reflect.String, reflect.Bool,
+			reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+			reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
+			reflect.Float32, reflect.Float64:
+		default:
+			return fmt.Errorf("%s: form fields must use scalar values or slices of scalar values", f.Name)
+		}
+	}
+	return nil
+}
+
 func isScalarStruct(t reflect.Type) bool {
-	return t.PkgPath() == "time" && t.Name() == "Time"
+	return (t.PkgPath() == "time" && t.Name() == "Time") || t == reflect.TypeFor[multipart.FileHeader]()
 }
 
 func collectionElementType(t reflect.Type) reflect.Type {
@@ -285,6 +356,12 @@ func fieldPointer(f reflect.StructField) string {
 		return JSONPointer("header", TagName(f.Tag.Get("header")))
 	case f.Tag.Get("cookie") != "":
 		return JSONPointer("cookie", TagName(f.Tag.Get("cookie")))
+	case f.Tag.Get("form") != "":
+		return JSONPointer("form", TagName(f.Tag.Get("form")))
+	case f.Tag.Get("file") != "":
+		return JSONPointer("file", TagName(f.Tag.Get("file")))
+	case f.Tag.Get("files") != "":
+		return JSONPointer("files", TagName(f.Tag.Get("files")))
 	case f.Tag.Get("body") != "" || f.Name == "Body":
 		return ""
 	default:

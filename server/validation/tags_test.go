@@ -1,6 +1,7 @@
 package validation_test
 
 import (
+	"mime/multipart"
 	"reflect"
 	"testing"
 
@@ -83,16 +84,19 @@ func TestHasTagOption(t *testing.T) {
 
 func TestFieldRequired(t *testing.T) {
 	type S struct {
-		QueryOpt  *string `query:"page"`
-		JSONOpt   *string `json:"bio"`
-		ExplTrue  *string `json:"et" required:"true"`
-		PathID    string  `path:"id"`
-		QueryReq  string  `query:"q" required:"true"`
-		QueryOmit string  `query:"limit,omitempty"`
-		JSONReq   string  `json:"name"`
-		JSONOmit  string  `json:"role,omitempty"`
-		ValidOmit string  `json:"tag" validate:"omitempty"`
-		ExplFalse string  `json:"ef" required:"false"`
+		QueryOpt  *string               `query:"page"`
+		JSONOpt   *string               `json:"bio"`
+		ExplTrue  *string               `json:"et" required:"true"`
+		PathID    string                `path:"id"`
+		QueryReq  string                `query:"q" required:"true"`
+		QueryOmit string                `query:"limit,omitempty"`
+		JSONReq   string                `json:"name"`
+		JSONOmit  string                `json:"role,omitempty"`
+		ValidOmit string                `json:"tag" validate:"omitempty"`
+		ExplFalse string                `json:"ef" required:"false"`
+		File      *multipart.FileHeader `file:"avatar"`
+		FileOmit  *multipart.FileHeader `file:"avatar,omitempty"`
+		FileFalse *multipart.FileHeader `file:"avatar" required:"false"`
 	}
 	typ := reflect.TypeFor[S]()
 
@@ -111,6 +115,9 @@ func TestFieldRequired(t *testing.T) {
 		{"ValidOmit", "json", false}, // validate:"omitempty"
 		{"ExplFalse", "json", false}, // required:"false"
 		{"ExplTrue", "json", true},   // required:"true" overrides pointer
+		{"File", "file", true},       // file values are pointers but required by default
+		{"FileOmit", "file", false},
+		{"FileFalse", "file", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.field, func(t *testing.T) {

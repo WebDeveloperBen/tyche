@@ -1,9 +1,11 @@
 package server_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -46,6 +48,24 @@ type wrappedCreateUserOutput struct {
 type sharedStatusOutput struct {
 	Body struct {
 		ID string `json:"id"`
+	} `body:"true"`
+}
+
+type uploadInput struct {
+	Title  string                  `form:"title" validate:"min=3"`
+	Tags   []string                `form:"tags,omitempty"`
+	Count  int                     `form:"count"`
+	Avatar *multipart.FileHeader   `file:"avatar"`
+	Docs   []*multipart.FileHeader `files:"docs,omitempty"`
+}
+
+type uploadOutput struct {
+	Body struct {
+		Title      string `json:"title"`
+		TagCount   int    `json:"tagCount"`
+		Count      int    `json:"count"`
+		AvatarName string `json:"avatarName"`
+		DocCount   int    `json:"docCount"`
 	} `body:"true"`
 }
 
@@ -380,6 +400,218 @@ func TestParseRequest_Validation(t *testing.T) {
 			t.Fatalf("expected validation error for /children/code, got %v", err)
 		}
 	})
+}
+
+func TestParseRequest_MultipartFormAndFiles(t *testing.T) {
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	if err := writer.WriteField("title", "avatar upload"); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.WriteField("tags", "profile"); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.WriteField("tags", "public"); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.WriteField("count", "2"); err != nil {
+		t.Fatal(err)
+	}
+	avatar, err := writer.CreateFormFile("avatar", "me.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := avatar.Write([]byte("avatar")); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"a.txt", "b.txt"} {
+		doc, err := writer.CreateFormFile("docs", name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := doc.Write([]byte(name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/upload", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	in, err := server.ParseRequest[uploadInput](req)
+	if err != nil {
+		t.Fatalf("ParseRequest failed: %v", err)
+	}
+	if in.Title != "avatar upload" || in.Count != 2 {
+		t.Fatalf("form fields parsed incorrectly: %#v", in)
+	}
+	if len(in.Tags) != 2 || in.Tags[0] != "profile" || in.Tags[1] != "public" {
+		t.Fatalf("form slice parsed incorrectly: %#v", in.Tags)
+	}
+	if in.Avatar == nil || in.Avatar.Filename != "me.png" {
+		t.Fatalf("avatar parsed incorrectly: %#v", in.Avatar)
+	}
+	if len(in.Docs) != 2 || in.Docs[0].Filename != "a.txt" || in.Docs[1].Filename != "b.txt" {
+		t.Fatalf("docs parsed incorrectly: %#v", in.Docs)
+	}
+}
+
+func TestParseRequest_MultipartRequiredFile(t *testing.T) {
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	if err := writer.WriteField("title", "avatar upload"); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.WriteField("count", "1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/upload", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	_, err := server.ParseRequest[uploadInput](req)
+	var validationErr *validation.Error
+	if err == nil || !errors.As(err, &validationErr) || len(validationErr.Problems) != 1 || validationErr.Problems[0].Pointer != "/file/avatar" {
+		t.Fatalf("expected required /file/avatar validation error, got %v", err)
+	}
+}
+
+func TestRegister_MultipartFormRouteAndOpenAPI(t *testing.T) {
+	router := server.NewAPI(server.NewServeMuxAdapter())
+	api := router.Group("/api")
+
+	server.Register(api, server.Operation{
+		OperationID: "upload-avatar",
+		Method:      http.MethodPost,
+		Path:        "/uploads",
+	}, func(ctx context.Context, in *uploadInput) (*uploadOutput, error) {
+		out := &uploadOutput{}
+		out.Body.Title = in.Title
+		out.Body.TagCount = len(in.Tags)
+		out.Body.Count = in.Count
+		out.Body.AvatarName = in.Avatar.Filename
+		out.Body.DocCount = len(in.Docs)
+		return out, nil
+	})
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	if err := writer.WriteField("title", "avatar upload"); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.WriteField("tags", "profile"); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.WriteField("count", "3"); err != nil {
+		t.Fatal(err)
+	}
+	avatar, err := writer.CreateFormFile("avatar", "me.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := avatar.Write([]byte("avatar")); err != nil {
+		t.Fatal(err)
+	}
+	doc, err := writer.CreateFormFile("docs", "notes.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := doc.Write([]byte("notes")); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/uploads", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		Data struct {
+			Title      string `json:"title"`
+			TagCount   int    `json:"tagCount"`
+			Count      int    `json:"count"`
+			AvatarName string `json:"avatarName"`
+			DocCount   int    `json:"docCount"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.Data.Title != "avatar upload" || resp.Data.TagCount != 1 || resp.Data.Count != 3 || resp.Data.AvatarName != "me.png" || resp.Data.DocCount != 1 {
+		t.Fatalf("unexpected response: %+v", resp.Data)
+	}
+
+	op := router.OpenAPI().Paths["/api/uploads"].POST
+	if op == nil || op.RequestBody == nil {
+		t.Fatal("expected multipart route request body in OpenAPI")
+	}
+	mt := op.RequestBody.Content["multipart/form-data"]
+	if mt == nil || mt.Schema == nil {
+		t.Fatalf("expected multipart/form-data schema, got %#v", op.RequestBody.Content)
+	}
+	if mt.Schema.Properties["avatar"].Format != "binary" {
+		t.Fatalf("expected avatar to be binary, got %#v", mt.Schema.Properties["avatar"])
+	}
+	docs := mt.Schema.Properties["docs"]
+	if docs == nil || docs.Type != "array" || docs.Items == nil || docs.Items.Format != "binary" {
+		t.Fatalf("expected docs to be binary array, got %#v", docs)
+	}
+	required := strings.Join(mt.Schema.Required, ",")
+	for _, want := range []string{"title", "count", "avatar"} {
+		if !strings.Contains(required, want) {
+			t.Fatalf("expected required multipart field %q in %v", want, mt.Schema.Required)
+		}
+	}
+}
+
+func TestRegister_MultipartRejectsInvalidFileTypes(t *testing.T) {
+	type badFileInput struct {
+		File string `file:"avatar"`
+	}
+	type emptyOutput struct{}
+
+	router := server.NewAPI(server.NewServeMuxAdapter())
+	err := server.RegisterE(router, server.Operation{
+		OperationID: "bad-upload",
+		Method:      http.MethodPost,
+		Path:        "/bad-upload",
+	}, func(ctx context.Context, in *badFileInput) (*emptyOutput, error) {
+		return &emptyOutput{}, nil
+	})
+	if err == nil || !strings.Contains(err.Error(), "file fields must use *multipart.FileHeader") {
+		t.Fatalf("expected invalid file field error, got %v", err)
+	}
+}
+
+func TestRegister_MultipartRejectsJSONBodyMix(t *testing.T) {
+	type mixedInput struct {
+		Title string                `form:"title"`
+		Body  struct{ Name string } `body:"true"`
+	}
+	type emptyOutput struct{}
+
+	router := server.NewAPI(server.NewServeMuxAdapter())
+	err := server.RegisterE(router, server.Operation{
+		OperationID: "mixed-upload",
+		Method:      http.MethodPost,
+		Path:        "/mixed-upload",
+	}, func(ctx context.Context, in *mixedInput) (*emptyOutput, error) {
+		return &emptyOutput{}, nil
+	})
+	if err == nil || !strings.Contains(err.Error(), "multipart form/file fields cannot be combined with JSON body fields") {
+		t.Fatalf("expected mixed body mode error, got %v", err)
+	}
 }
 
 func TestRegister_Integration(t *testing.T) {

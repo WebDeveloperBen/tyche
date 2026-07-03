@@ -1,6 +1,7 @@
 package validation
 
 import (
+	"mime/multipart"
 	"reflect"
 	"slices"
 	"strings"
@@ -18,6 +19,9 @@ func FieldRequired(f reflect.StructField, tagKey string) bool {
 		if rules.OmitEmpty {
 			return false
 		}
+	}
+	if tagKey == "file" && isMultipartFileHeader(f.Type) {
+		return !HasTagOption(f.Tag.Get(tagKey), "omitempty")
 	}
 	return FieldRequiredFromTag(f.Tag.Get(tagKey), f.Type)
 }
@@ -42,6 +46,10 @@ func TagName(tag string) string {
 		return ""
 	}
 	return strings.Split(tag, ",")[0]
+}
+
+func isMultipartFileHeader(t reflect.Type) bool {
+	return t == reflect.TypeFor[*multipart.FileHeader]()
 }
 
 func JSONFieldName(f reflect.StructField) (string, bool) {

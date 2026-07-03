@@ -36,6 +36,8 @@ func analyseInputType(t types.Type) InputBindSpec {
 		}
 		tag := reflect.StructTag(strct.Tag(i))
 		switch {
+		case tag.Get("form") != "" || tag.Get("file") != "" || tag.Get("files") != "":
+			return InputBindSpec{}
 		case tag.Get("body") != "" || field.Name() == "Body":
 			bodySpec, ok := analyseBodyStruct(field.Type(), "in."+field.Name()+".", fieldRequiredForJSONTag(tag, field.Type()))
 			if !ok {

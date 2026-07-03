@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"mime/multipart"
 	"reflect"
 	"strings"
 	"sync"
@@ -68,6 +69,12 @@ func (r *Registry) schemaFromType(t reflect.Type) *Schema {
 	}
 
 	s := &Schema{}
+
+	if t == reflect.TypeFor[multipart.FileHeader]() {
+		s.Type = "string"
+		s.Format = "binary"
+		return s
+	}
 
 	switch t.Kind() {
 	case reflect.Bool:

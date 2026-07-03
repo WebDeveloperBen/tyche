@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"reflect"
 	"strconv"
@@ -247,11 +248,15 @@ func extractRequestBody(t reflect.Type, registry *openapi.Registry) *openapi.Req
 	if spec.bodyMode == bodyModeNone {
 		return nil
 	}
+	mediaType := "application/json"
+	if spec.bodyMode == bodyModeMultipart {
+		mediaType = "multipart/form-data"
+	}
 
 	return &openapi.RequestBody{
 		Required: spec.bodyRequired,
 		Content: map[string]*openapi.MediaType{
-			"application/json": {Schema: bodySchemaForSpec(spec, registry)},
+			mediaType: {Schema: bodySchemaForSpec(spec, registry)},
 		},
 	}
 }
@@ -301,7 +306,39 @@ func ParseRequest[I any](req *http.Request) (*I, error) {
 	validationErr := &validation.Error{}
 
 	for _, binding := range spec.bindings {
-		if binding.readSlice != nil {
+		if binding.readFile != nil {
+			file, ok, err := binding.readFile(req)
+			if err != nil {
+				return nil, err
+			}
+			if !ok {
+				if binding.required {
+					validationErr.AddRequired(validation.JSONPointer(binding.source, binding.name))
+				}
+				continue
+			}
+			if binding.setFile != nil {
+				if err := binding.setFile(target.Field(binding.index), file); err != nil {
+					validationErr.AddInvalidType(validation.JSONPointer(binding.source, binding.name))
+				}
+			}
+		} else if binding.readFiles != nil {
+			files, ok, err := binding.readFiles(req)
+			if err != nil {
+				return nil, err
+			}
+			if !ok {
+				if binding.required {
+					validationErr.AddRequired(validation.JSONPointer(binding.source, binding.name))
+				}
+				continue
+			}
+			if binding.setFiles != nil {
+				if err := binding.setFiles(target.Field(binding.index), files); err != nil {
+					validationErr.AddInvalidType(validation.JSONPointer(binding.source, binding.name))
+				}
+			}
+		} else if binding.readSlice != nil {
 			values, ok, err := binding.readSlice(req)
 			if err != nil {
 				return nil, err
@@ -338,7 +375,7 @@ func ParseRequest[I any](req *http.Request) (*I, error) {
 		return nil, validationErr
 	}
 
-	if spec.bodyMode != bodyModeNone {
+	if spec.bodyMode != bodyModeNone && spec.bodyMode != bodyModeMultipart {
 		if err := decodeRequestBody(req, target, spec); err != nil {
 			return nil, err
 		}
@@ -425,8 +462,12 @@ func WriteSuccess(w http.ResponseWriter, status int, data any) error {
 type inputBinding struct {
 	read      func(*http.Request) (string, bool, error)
 	readSlice func(*http.Request) ([]string, bool, error)
+	readFile  func(*http.Request) (*multipart.FileHeader, bool, error)
+	readFiles func(*http.Request) ([]*multipart.FileHeader, bool, error)
 	set       func(reflect.Value, string) error
 	setSlice  func(reflect.Value, []string) error
+	setFile   func(reflect.Value, *multipart.FileHeader) error
+	setFiles  func(reflect.Value, []*multipart.FileHeader) error
 	name      string
 	location  string
 	source    string
@@ -440,6 +481,7 @@ const (
 	bodyModeNone bodyBindingMode = iota
 	bodyModeStruct
 	bodyModeField
+	bodyModeMultipart
 )
 
 type RequiredJSONField struct {
@@ -457,6 +499,8 @@ type inputSpec struct {
 	bodyMode           bodyBindingMode
 	bodyRequired       bool
 }
+
+const multipartMaxMemory = 32 << 20
 
 var inputSpecCache sync.Map
 
@@ -523,17 +567,7 @@ func inputSpecForType(t reflect.Type) *inputSpec {
 						return values, true, nil
 					},
 					setSlice: func(v reflect.Value, values []string) error {
-						if v.Kind() != reflect.Slice {
-							return fmt.Errorf("expected slice, got %s", v.Type())
-						}
-						for _, val := range values {
-							elem := reflect.New(v.Type().Elem())
-							if err := setStringValue(elem, val); err != nil {
-								return err
-							}
-							v.Set(reflect.Append(v, elem.Elem()))
-						}
-						return nil
+						return setStringSliceValue(v, values)
 					},
 				})
 			} else {
@@ -590,6 +624,87 @@ func inputSpecForType(t reflect.Type) *inputSpec {
 				},
 				set: setStringValue,
 			})
+		case f.Tag.Get("form") != "":
+			name := validation.TagName(f.Tag.Get("form"))
+			spec.bodyMode = bodyModeMultipart
+			ft := validation.IndirectType(f.Type)
+			if ft.Kind() == reflect.Slice {
+				spec.bindings = append(spec.bindings, inputBinding{
+					index:    i,
+					name:     name,
+					location: "form field",
+					source:   "form",
+					required: validation.FieldRequired(f, "form"),
+					readSlice: func(req *http.Request) ([]string, bool, error) {
+						if err := ensureMultipartForm(req); err != nil {
+							return nil, false, err
+						}
+						if req.MultipartForm == nil {
+							return nil, false, nil
+						}
+						values := req.MultipartForm.Value[name]
+						if len(values) == 0 {
+							return nil, false, nil
+						}
+						return values, true, nil
+					},
+					setSlice: setStringSliceValue,
+				})
+			} else {
+				spec.bindings = append(spec.bindings, inputBinding{
+					index:    i,
+					name:     name,
+					location: "form field",
+					source:   "form",
+					required: validation.FieldRequired(f, "form"),
+					read: func(req *http.Request) (string, bool, error) {
+						if err := ensureMultipartForm(req); err != nil {
+							return "", false, err
+						}
+						if req.MultipartForm == nil {
+							return "", false, nil
+						}
+						values := req.MultipartForm.Value[name]
+						if len(values) == 0 {
+							return "", false, nil
+						}
+						return values[0], true, nil
+					},
+					set: setStringValue,
+				})
+			}
+		case f.Tag.Get("file") != "":
+			name := validation.TagName(f.Tag.Get("file"))
+			spec.bodyMode = bodyModeMultipart
+			spec.bindings = append(spec.bindings, inputBinding{
+				index:    i,
+				name:     name,
+				location: "file field",
+				source:   "file",
+				required: validation.FieldRequired(f, "file"),
+				readFile: func(req *http.Request) (*multipart.FileHeader, bool, error) {
+					files, ok, err := readMultipartFiles(req, name)
+					if err != nil || !ok {
+						return nil, false, err
+					}
+					return files[0], true, nil
+				},
+				setFile: setMultipartFileValue,
+			})
+		case f.Tag.Get("files") != "":
+			name := validation.TagName(f.Tag.Get("files"))
+			spec.bodyMode = bodyModeMultipart
+			spec.bindings = append(spec.bindings, inputBinding{
+				index:    i,
+				name:     name,
+				location: "file fields",
+				source:   "files",
+				required: validation.FieldRequired(f, "files"),
+				readFiles: func(req *http.Request) ([]*multipart.FileHeader, bool, error) {
+					return readMultipartFiles(req, name)
+				},
+				setFiles: setMultipartFilesValue,
+			})
 		case f.Tag.Get("body") != "" || f.Name == "Body":
 			spec.bodyMode = bodyModeField
 			spec.bodyIndex = i
@@ -602,6 +717,14 @@ func inputSpecForType(t reflect.Type) *inputSpec {
 				spec.bodyType = t
 				spec.bodyRequired = hasRequiredJSONFields(t)
 				spec.requiredBodyFields = RequiredJSONFields(t, nil, nil)
+			}
+		}
+	}
+	if spec.bodyMode == bodyModeMultipart {
+		for _, binding := range spec.bindings {
+			if binding.required && (binding.source == "form" || binding.source == "file" || binding.source == "files") {
+				spec.bodyRequired = true
+				break
 			}
 		}
 	}
@@ -696,6 +819,80 @@ func setStringValue(v reflect.Value, val string) error {
 		return fmt.Errorf("unsupported field type %s", v.Type())
 	}
 	return nil
+}
+
+func setStringSliceValue(v reflect.Value, values []string) error {
+	if v.Kind() == reflect.Pointer {
+		if len(values) == 0 {
+			return nil
+		}
+		v.Set(reflect.New(v.Type().Elem()))
+		return setStringSliceValue(v.Elem(), values)
+	}
+	if v.Kind() != reflect.Slice {
+		return fmt.Errorf("expected slice, got %s", v.Type())
+	}
+	for _, val := range values {
+		elem := reflect.New(v.Type().Elem()).Elem()
+		if err := setStringValue(elem, val); err != nil {
+			return err
+		}
+		v.Set(reflect.Append(v, elem))
+	}
+	return nil
+}
+
+func setMultipartFileValue(v reflect.Value, file *multipart.FileHeader) error {
+	if !v.CanSet() || v.Type() != reflect.TypeFor[*multipart.FileHeader]() {
+		return fmt.Errorf("expected *multipart.FileHeader, got %s", v.Type())
+	}
+	v.Set(reflect.ValueOf(file))
+	return nil
+}
+
+func setMultipartFilesValue(v reflect.Value, files []*multipart.FileHeader) error {
+	if !v.CanSet() || v.Type() != reflect.TypeFor[[]*multipart.FileHeader]() {
+		return fmt.Errorf("expected []*multipart.FileHeader, got %s", v.Type())
+	}
+	v.Set(reflect.ValueOf(files))
+	return nil
+}
+
+func ensureMultipartForm(req *http.Request) error {
+	if req.MultipartForm != nil {
+		return nil
+	}
+	if err := validateMultipartContentType(req.Header.Get("Content-Type")); err != nil {
+		return err
+	}
+	if req.Body == nil {
+		return nil
+	}
+	if err := req.ParseMultipartForm(multipartMaxMemory); err != nil {
+		if errors.Is(err, http.ErrNotMultipart) {
+			return fmt.Errorf("unsupported content type %q", req.Header.Get("Content-Type"))
+		}
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			return fmt.Errorf("request body too large on %s %s: limit is %d bytes", req.Method, req.URL.Path, maxBytesErr.Limit)
+		}
+		return fmt.Errorf("failed to parse multipart form: %w", err)
+	}
+	return nil
+}
+
+func readMultipartFiles(req *http.Request, name string) ([]*multipart.FileHeader, bool, error) {
+	if err := ensureMultipartForm(req); err != nil {
+		return nil, false, err
+	}
+	if req.MultipartForm == nil {
+		return nil, false, nil
+	}
+	files := req.MultipartForm.File[name]
+	if len(files) == 0 {
+		return nil, false, nil
+	}
+	return files, true, nil
 }
 
 func ReadRequestJSONBody(req *http.Request) ([]byte, error) {
@@ -827,6 +1024,17 @@ func validateJSONContentType(contentType string) error {
 	}
 	mediaType := strings.TrimSpace(strings.Split(contentType, ";")[0])
 	if mediaType != "" && mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+		return fmt.Errorf("unsupported content type %q", mediaType)
+	}
+	return nil
+}
+
+func validateMultipartContentType(contentType string) error {
+	if contentType == "" {
+		return nil
+	}
+	mediaType := strings.TrimSpace(strings.Split(contentType, ";")[0])
+	if mediaType != "" && mediaType != "multipart/form-data" {
 		return fmt.Errorf("unsupported content type %q", mediaType)
 	}
 	return nil
@@ -1089,6 +1297,48 @@ func bodySchemaForSpec(spec *inputSpec, registry *openapi.Registry) *openapi.Sch
 	case bodyModeField:
 		field := spec.typ.Field(spec.bodyIndex)
 		return openapi.CloneSchema(registry.Schema(field.Type))
+	case bodyModeMultipart:
+		bodySchema := &openapi.Schema{Type: "object", Properties: map[string]*openapi.Schema{}}
+		seen := map[string]bool{}
+		for _, binding := range spec.bindings {
+			if binding.source != "form" && binding.source != "file" && binding.source != "files" {
+				continue
+			}
+			if seen[binding.name] {
+				continue
+			}
+			seen[binding.name] = true
+			f := spec.typ.Field(binding.index)
+			var fieldSchema *openapi.Schema
+			switch binding.source {
+			case "file":
+				fieldSchema = &openapi.Schema{Type: "string", Format: "binary"}
+			case "files":
+				fieldSchema = &openapi.Schema{
+					Type:  "array",
+					Items: &openapi.Schema{Type: "string", Format: "binary"},
+				}
+			default:
+				fieldSchema = openapi.CloneSchema(registry.Schema(f.Type))
+			}
+			openapi.ApplyFieldSchemaMetadata(fieldSchema, f)
+			if binding.source == "file" {
+				fieldSchema.Type = "string"
+				fieldSchema.Format = "binary"
+			}
+			if binding.source == "files" && fieldSchema.Items != nil {
+				fieldSchema.Items.Type = "string"
+				fieldSchema.Items.Format = "binary"
+			}
+			bodySchema.Properties[binding.name] = fieldSchema
+			if binding.required {
+				bodySchema.Required = append(bodySchema.Required, binding.name)
+			}
+		}
+		if len(bodySchema.Required) == 0 {
+			bodySchema.Required = nil
+		}
+		return bodySchema
 	default:
 		return nil
 	}
