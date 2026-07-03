@@ -117,7 +117,7 @@ tasks:
   tests:
     desc: Run all Go tests against a temporary generated worktree
     cmds:
-      - go run ./cmd/tyche test ./...
+      - go test ./...
 
   modernize:
     desc: Apply Go modernization fixes (min/max, slices, range-over-int, etc.) across the module
@@ -176,10 +176,16 @@ tasks:
         cd "$WORK"
         $CLI init --module github.com/acme/api/client --yes --root .
         test -f tyche.json
-        $CLI config show --quiet --root .
+        $CLI config show --quiet --root . > /dev/null
         $CLI config show --format=json --quiet --root . | grep -q '"version"'
-        # Unknown flag should exit non-zero (and so should missing required args).
-        ( ! $CLI build --root . ) || (echo "build without args should fail" && exit 1)
+        # `build` with no --output must exit non-zero. Its error goes to stderr
+        # by design; silence it here so the expected failure doesn't look like a
+        # real one in the log, and assert the exit code instead.
+        if $CLI build --root . > /dev/null 2>&1; then
+          echo "FAIL: 'tyche build' without --output should exit non-zero" >&2
+          exit 1
+        fi
+        echo "ok: 'tyche build' without --output correctly exits non-zero"
 
   verify:
     desc: Run every lefthook pre-commit check in sequence; exit on the first failure

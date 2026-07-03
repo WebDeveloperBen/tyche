@@ -14,6 +14,7 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -63,28 +64,11 @@ func LoadConfig(opts LoadOptions) (*config.LoadResult, error) {
 		opts.InfoCallback(fmt.Sprintf("using config %s", loaded.Path))
 	}
 	if opts.PrintInfo && loaded.README != "" {
-		for _, line := range splitLines(loaded.README) {
+		for line := range strings.SplitSeq(loaded.README, "\n") {
 			opts.InfoCallback("  " + line)
 		}
 	}
 	return loaded, nil
-}
-
-// splitLines is a small replacement for strings.SplitSeq that does not pull
-// in the strings package's iterator types in the function signature.
-func splitLines(s string) []string {
-	var out []string
-	start := 0
-	for i := 0; i < len(s); i++ {
-		if s[i] == '\n' {
-			out = append(out, s[start:i])
-			start = i + 1
-		}
-	}
-	if start < len(s) {
-		out = append(out, s[start:])
-	}
-	return out
 }
 
 // ResolveRoot returns the directory to operate in: the explicit --root if
@@ -144,7 +128,9 @@ func Scaffold(opts ScaffoldOptions) (string, error) {
 	// Round-trip: parse the file we just wrote to catch any validator errors
 	// immediately, before the user hits them on the next CLI run.
 	if _, err := config.Load(config.LoadOptions{ExplicitPath: dest}); err != nil {
-		_ = os.Remove(dest)
+		if rmErr := os.Remove(dest); rmErr != nil {
+			return "", fmt.Errorf("scaffolded file failed validation: %w (and could not remove the malformed %s: %v)", err, dest, rmErr)
+		}
 		return "", fmt.Errorf("scaffolded file failed validation: %w", err)
 	}
 	return dest, nil
@@ -171,13 +157,31 @@ func renderScaffold(opts ScaffoldOptions) string {
 // --- config show ---------------------------------------------------------
 
 // ConfigShowResult is the rendered shape of `tyche config show`. The CLI
-// layer formats this through its Printer; --json emits it as JSON.
+// layer formats this through its Printer; --json emits it as JSON. The
+// nested blocks are typed (not map[string]any) so the JSON schema is
+// statically guaranteed and a typo can't silently drop a field.
 type ConfigShowResult struct {
-	Client  map[string]any `json:"client,omitempty"`
-	Path    string         `json:"path,omitempty"`
-	Server  map[string]any `json:"server,omitempty"`
-	Spec    string         `json:"spec,omitempty"`
-	Version int            `json:"version"`
+	Client  *ConfigClient `json:"client,omitempty"`
+	Path    string        `json:"path,omitempty"`
+	Server  *ConfigServer `json:"server,omitempty"`
+	Spec    string        `json:"spec,omitempty"`
+	Version int           `json:"version"`
+}
+
+// ConfigClient mirrors config.ClientBlock for `config show` output.
+type ConfigClient struct {
+	Out        string `json:"out,omitempty"`
+	Module     string `json:"module,omitempty"`
+	Package    string `json:"package,omitempty"`
+	Go         string `json:"go,omitempty"`
+	ClientName string `json:"client_name,omitempty"`
+	TypeNaming string `json:"type_naming,omitempty"`
+}
+
+// ConfigServer mirrors config.ServerBlock for `config show` output.
+type ConfigServer struct {
+	Patterns []string `json:"patterns,omitempty"`
+	Ignore   []string `json:"ignore,omitempty"`
 }
 
 // ShowConfig resolves tyche.json and returns a printable representation.
@@ -197,36 +201,20 @@ func ShowConfig(opts LoadOptions) (*ConfigShowResult, error) {
 		out.Spec = f.Spec
 	}
 	if f.Client != nil {
-		c := map[string]any{}
-		if f.Client.Out != "" {
-			c["out"] = f.Client.Out
+		out.Client = &ConfigClient{
+			Out:        f.Client.Out,
+			Module:     f.Client.Module,
+			Package:    f.Client.Package,
+			Go:         f.Client.Go,
+			ClientName: f.Client.ClientName,
+			TypeNaming: f.Client.TypeNaming,
 		}
-		if f.Client.Module != "" {
-			c["module"] = f.Client.Module
-		}
-		if f.Client.Package != "" {
-			c["package"] = f.Client.Package
-		}
-		if f.Client.Go != "" {
-			c["go"] = f.Client.Go
-		}
-		if f.Client.ClientName != "" {
-			c["client_name"] = f.Client.ClientName
-		}
-		if f.Client.TypeNaming != "" {
-			c["type_naming"] = f.Client.TypeNaming
-		}
-		out.Client = c
 	}
 	if f.Server != nil {
-		s := map[string]any{}
-		if len(f.Server.Patterns) > 0 {
-			s["patterns"] = f.Server.Patterns
+		out.Server = &ConfigServer{
+			Patterns: f.Server.Patterns,
+			Ignore:   f.Server.Ignore,
 		}
-		if len(f.Server.Ignore) > 0 {
-			s["ignore"] = f.Server.Ignore
-		}
-		out.Server = s
 	}
 	return out, nil
 }
@@ -259,17 +247,22 @@ func defaultPatterns(args []string) []string {
 // behind `tyche build|run|test`: it copies the project into a tmpdir,
 // regenerates codecs there, runs the go subcommand, and cleans up.
 type WorktreeOptions struct {
-	Root     string
-	Patterns []string
-	GoArgs   []string // e.g. ["build", "-o", "./bin/api", "./cmd/api"]
+	Root       string
+	ConfigPath string // honours --config for server pattern/ignore resolution
+	EnvConfig  string // honours TYCHE_CONFIG for the same
+	Patterns   []string
+	GoArgs     []string // e.g. ["build", "-o", "./bin/api", "./cmd/api"]
 }
 
 // WithWorktree runs a go subcommand against a temporary copy of the project
 // with fresh codecs generated in place, so the user's working tree is never
 // touched by generated code. It is the implementation behind build/run/test.
 func WithWorktree(opts WorktreeOptions) error {
-	patterns, ignore := resolvePatterns(opts.Root, opts.Patterns)
-	ignoreMatcher := buildIgnoreMatcher(ignore)
+	patterns, ignore := ResolveServerPatterns(opts.Root, opts.ConfigPath, opts.EnvConfig, opts.Patterns)
+	ignoreMatcher, err := buildIgnoreMatcher(ignore)
+	if err != nil {
+		return err
+	}
 
 	tmpRoot := filepath.Join(opts.Root, "tmp")
 	if err := os.MkdirAll(tmpRoot, 0o755); err != nil {
@@ -279,6 +272,10 @@ func WithWorktree(opts WorktreeOptions) error {
 	if err != nil {
 		return err
 	}
+	// Cleanup runs on every return path, including panics (defer fires during
+	// unwind). If RemoveAll fails (e.g. a file still held open on Windows), the
+	// temp dir leaks under ./tmp until the next `tyche clean`; that is not worth
+	// failing the command over, so the error is intentionally dropped.
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	if err := copyProjectTree(opts.Root, tmpDir, ignoreMatcher); err != nil {
@@ -290,18 +287,36 @@ func WithWorktree(opts WorktreeOptions) error {
 	return runGo(tmpDir, opts.GoArgs...)
 }
 
-func resolvePatterns(rootDir string, fallback []string) ([]string, []string) {
-	loaded, err := config.Load(config.LoadOptions{CWD: rootDir})
+// ResolveServerPatterns returns the package patterns and ignore globs for
+// server codegen. It honours tyche.json's server block using the same config
+// precedence as the rest of the CLI (explicit --config > env > discovery from
+// root) and falls back to the supplied patterns (default ./...) when no config
+// or server block is present.
+func ResolveServerPatterns(root, configPath, envConfig string, fallback []string) (patterns, ignore []string) {
+	loaded, err := config.Load(config.LoadOptions{
+		ExplicitPath:  configPath,
+		EnvConfigPath: envConfig,
+		CWD:           root,
+	})
 	if err != nil || loaded == nil || loaded.File == nil || loaded.File.Server == nil {
 		return defaultPatterns(fallback), nil
 	}
-	patterns, ignore := loaded.File.Server.ApplyServer(defaultPatterns(fallback))
-	return patterns, ignore
+	return loaded.File.Server.ApplyServer(defaultPatterns(fallback))
 }
 
-func buildIgnoreMatcher(patterns []string) func(string, string) bool {
+// buildIgnoreMatcher validates the ignore globs up front (so a malformed
+// pattern in tyche.json fails fast instead of silently matching nothing) and
+// returns a matcher that reports whether a walked path should be skipped.
+func buildIgnoreMatcher(patterns []string) (func(string, string) bool, error) {
 	if len(patterns) == 0 {
-		return func(string, string) bool { return false }
+		return func(string, string) bool { return false }, nil
+	}
+	// filepath.Match reports ErrBadPattern for malformed globs; validate
+	// each pattern once here rather than swallowing the error on every path.
+	for _, pattern := range patterns {
+		if _, err := filepath.Match(pattern, ""); err != nil {
+			return nil, fmt.Errorf("invalid ignore pattern %q in tyche.json server.ignore: %w", pattern, err)
+		}
 	}
 	return func(relPath, base string) bool {
 		cleanRel := filepath.Clean(relPath)
@@ -317,7 +332,7 @@ func buildIgnoreMatcher(patterns []string) func(string, string) bool {
 			}
 		}
 		return false
-	}
+	}, nil
 }
 
 func copyProjectTree(rootDir, dstDir string, ignore func(string, string) bool) error {
@@ -380,12 +395,14 @@ func copyFile(srcPath, dstPath string, mode os.FileMode) error {
 	if err != nil {
 		return err
 	}
-	defer func() { _ = dst.Close() }()
 
-	if _, err = io.Copy(dst, src); err != nil {
-		return err
+	// Close dst exactly once, surfacing a copy error in preference to a
+	// close error. No early return sits between here and the close.
+	_, err = io.Copy(dst, src)
+	if closeErr := dst.Close(); err == nil {
+		err = closeErr
 	}
-	return dst.Close()
+	return err
 }
 
 func runGo(dir string, args ...string) error {
@@ -535,17 +552,5 @@ func startsWithMarker(data []byte) bool {
 	if i >= len(data) {
 		return false
 	}
-	return bytesHasPrefix(data[i:], []byte(generatedClientMarker))
-}
-
-func bytesHasPrefix(s, prefix []byte) bool {
-	if len(s) < len(prefix) {
-		return false
-	}
-	for i := range prefix {
-		if s[i] != prefix[i] {
-			return false
-		}
-	}
-	return true
+	return bytes.HasPrefix(data[i:], []byte(generatedClientMarker))
 }

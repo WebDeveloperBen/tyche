@@ -3,8 +3,6 @@ package cli
 import (
 	"fmt"
 	"io"
-
-	"github.com/alecthomas/kong"
 )
 
 // CompletionCmd is `tyche completion <shell>`. It prints a shell
@@ -15,32 +13,33 @@ type CompletionCmd struct {
 	Shell string `arg:"" enum:"bash,zsh,fish,powershell" help:"Shell to generate completion for."`
 }
 
-func (c *CompletionCmd) Run(g *GlobalFlags) error {
-	parser, err := kong.New(&CLI{}, kong.Name("tyche"))
-	if err != nil {
-		return Exit(2, fmt.Errorf("init parser: %w", err))
-	}
-	switch c.Shell {
-	case "bash":
-		return runBashCompletion(g.stdout(), parser)
-	case "zsh":
-		return runZshCompletion(g.stdout(), parser)
-	case "fish":
-		return runFishCompletion(g.stdout(), parser)
-	case "powershell":
-		return runPowershellCompletion(g.stdout(), parser)
-	}
-	return Exit(2, fmt.Errorf("unsupported shell: %s", c.Shell))
+// completionScripts maps a shell name to its completion script. The keys are
+// exactly the enum values on CompletionCmd.Shell, so the `enum:` tag guarantees
+// c.Shell is always present here — no default/fallback branch is reachable.
+var completionScripts = map[string]string{
+	"bash":       bashCompletionHeader + bashCompletionBody,
+	"zsh":        zshCompletionScript,
+	"fish":       fishCompletionScript,
+	"powershell": powershellCompletionScript,
 }
 
-// runBashCompletion emits a small bash completion script. It is not as
-// polished as cobra's generator — Kong does not include one — but it
-// covers the surface (top-level subcommands + flag names) and is the
-// reason completion is in the CLI at all.
-func runBashCompletion(w io.Writer, _ *kong.Kong) error {
-	script := bashCompletionHeader + bashCompletionBody
-	_, err := io.WriteString(w, script)
+func (c *CompletionCmd) Run(g *GlobalFlags) error {
+	script, ok := completionScripts[c.Shell]
+	if !ok {
+		// Unreachable while the enum and completionScripts keys agree; kept
+		// as a defensive guard rather than a silent empty write.
+		return Exit(2, fmt.Errorf("unsupported shell: %s", c.Shell))
+	}
+	_, err := io.WriteString(g.stdout(), script)
 	return err
+}
+
+// completionSubcommands is the list of top-level verbs the completion scripts
+// offer. It is asserted against the live Kong command tree by a test so a new
+// subcommand cannot silently desync the scripts below.
+var completionSubcommands = []string{
+	"init", "config", "generate", "clean", "build",
+	"run", "test", "client", "version", "completion", "help",
 }
 
 const bashCompletionHeader = `# bash completion for tyche
@@ -71,12 +70,11 @@ _tyche_completions() {
 complete -F _tyche_completions tyche
 `
 
-// runZshCompletion emits a minimal zsh completion entry. Kong has no
-// built-in zsh generator, so we ship a hand-rolled #compdef block that
-// delegates to the bash function. Good enough to start; replace with a
-// proper zsh script if the project grows.
-func runZshCompletion(w io.Writer, _ *kong.Kong) error {
-	_, err := io.WriteString(w, `#compdef tyche
+// zshCompletionScript is a minimal zsh completion entry. Kong has no built-in
+// zsh generator, so we ship a hand-rolled #compdef block that delegates to a
+// bash-style function via bashcompinit. Good enough to start; replace with a
+// proper _tyche zsh script if the project grows.
+const zshCompletionScript = `#compdef tyche
 # Minimal zsh completion: delegates to the bash function.
 autoload -U +X bashcompinit && bashcompinit
 _tyche_completions() {
@@ -95,23 +93,15 @@ _tyche_completions() {
   return 0
 }
 compdef _tyche_completions tyche
-`)
-	return err
-}
+`
 
-// runFishCompletion emits a minimal fish completion script.
-func runFishCompletion(w io.Writer, _ *kong.Kong) error {
-	_, err := io.WriteString(w, `# fish completion for tyche
+const fishCompletionScript = `# fish completion for tyche
 complete -c tyche -n "__fish_use_subcommand" -a "init config generate clean build run test client version completion help"
 complete -c tyche -n "__fish_seen_subcommand_from config" -a "show"
 complete -c tyche -n "__fish_seen_subcommand_from completion" -a "bash zsh fish powershell"
-`)
-	return err
-}
+`
 
-// runPowershellCompletion emits a minimal PowerShell completion script.
-func runPowershellCompletion(w io.Writer, _ *kong.Kong) error {
-	_, err := io.WriteString(w, `# PowerShell completion for tyche
+const powershellCompletionScript = `# PowerShell completion for tyche
 using namespace System.Management.Automation
 Register-ArgumentCompleter -Native -CommandName 'tyche' -ScriptBlock {
     param($wordToComplete, $commandAst, $cursorPosition)
@@ -120,6 +110,4 @@ Register-ArgumentCompleter -Native -CommandName 'tyche' -ScriptBlock {
         [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
     }
 }
-`)
-	return err
-}
+`

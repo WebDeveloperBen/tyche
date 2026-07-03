@@ -25,21 +25,6 @@ func IsTerminal(f *os.File) bool {
 	return (info.Mode() & os.ModeCharDevice) != 0
 }
 
-// IsStderrTerminal reports whether os.Stderr is a TTY. Use it to decide
-// whether to emit colours, spinner lines, and the "using config ..." banner;
-// when stderr is redirected to a file, the CLI must stay quiet so logs and
-// pipelines are not littered with decorations.
-func IsStderrTerminal() bool {
-	return IsTerminal(os.Stderr)
-}
-
-// IsStdoutTerminal reports whether os.Stdout is a TTY. Use it to decide
-// whether to pretty-format tabular output; when stdout is piped to another
-// command, the CLI must emit parseable text only.
-func IsStdoutTerminal() bool {
-	return IsTerminal(os.Stdout)
-}
-
 // Prompt is a tiny single-line input helper. It writes a question to Out and
 // reads one trimmed line from In. The zero value is fine: it uses stdout and
 // stdin.

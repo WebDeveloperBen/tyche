@@ -87,16 +87,16 @@ func TestFieldRequired(t *testing.T) {
 		QueryOpt  *string               `query:"page"`
 		JSONOpt   *string               `json:"bio"`
 		ExplTrue  *string               `json:"et" required:"true"`
-		PathID    string                `path:"id"`
-		QueryReq  string                `query:"q" required:"true"`
-		QueryOmit string                `query:"limit,omitempty"`
+		FileFalse *multipart.FileHeader `file:"avatar" required:"false"`
+		FileOmit  *multipart.FileHeader `file:"avatar,omitempty"`
+		File      *multipart.FileHeader `file:"avatar"`
 		JSONReq   string                `json:"name"`
 		JSONOmit  string                `json:"role,omitempty"`
 		ValidOmit string                `json:"tag" validate:"omitempty"`
 		ExplFalse string                `json:"ef" required:"false"`
-		File      *multipart.FileHeader `file:"avatar"`
-		FileOmit  *multipart.FileHeader `file:"avatar,omitempty"`
-		FileFalse *multipart.FileHeader `file:"avatar" required:"false"`
+		QueryOmit string                `query:"limit,omitempty"`
+		QueryReq  string                `query:"q" required:"true"`
+		PathID    string                `path:"id"`
 	}
 	typ := reflect.TypeFor[S]()
 

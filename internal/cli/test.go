@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/webdeveloperben/tyche/internal/app"
 )
@@ -9,8 +10,8 @@ import (
 // TestCmd is `tyche test`. It runs `go test` against a temporary copy
 // of the project with codecs generated in place.
 type TestCmd struct {
-	Verbose  bool     `help:"Run tests in verbose mode (passes -v to go test)." short:"v"`
 	Patterns []string `help:"Package patterns to test (default: ./...)." default:""`
+	Verbose  bool     `help:"Run tests in verbose mode (passes -v to go test)." short:"v"`
 }
 
 func (c *TestCmd) Run(g *GlobalFlags) error {
@@ -29,9 +30,11 @@ func (c *TestCmd) Run(g *GlobalFlags) error {
 	}
 	args = append(args, packages...)
 	if err := app.WithWorktree(app.WorktreeOptions{
-		Root:     root,
-		Patterns: c.Patterns,
-		GoArgs:   args,
+		Root:       root,
+		Patterns:   c.Patterns,
+		GoArgs:     args,
+		ConfigPath: g.Config,
+		EnvConfig:  os.Getenv("TYCHE_CONFIG"),
 	}); err != nil {
 		return Exit(1, err)
 	}

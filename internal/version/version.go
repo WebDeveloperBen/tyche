@@ -90,7 +90,13 @@ func resolve() {
 // String returns a one-line, human-readable summary of the build identity.
 // This is what `tyche version` prints to stdout.
 func String() string {
-	i := Get()
+	return format(Get())
+}
+
+// format renders an Info as a one-line summary. It is a pure function of its
+// argument (no package-level state) so it can be tested with synthetic Info
+// values without resetting the sync.Once or mutating the ldflag variables.
+func format(i Info) string {
 	if i.Commit == "" {
 		return fmt.Sprintf("tyche %s (built %s with %s)", i.Version, i.BuiltBy, i.Go)
 	}

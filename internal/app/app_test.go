@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -168,7 +169,7 @@ func TestShowConfig_ResolvesFields(t *testing.T) {
 	if res.Spec != "./api/openapi.json" {
 		t.Errorf("Spec = %q", res.Spec)
 	}
-	if res.Client == nil || res.Client["module"] != "github.com/acme/api/client" {
+	if res.Client == nil || res.Client.Module != "github.com/acme/api/client" {
 		t.Errorf("Client.module missing: %+v", res.Client)
 	}
 
@@ -178,7 +179,7 @@ func TestShowConfig_ResolvesFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Marshal: %v", err)
 	}
-	if !contains(data, `"github.com/acme/api/client"`) {
+	if !bytes.Contains(data, []byte(`"github.com/acme/api/client"`)) {
 		t.Errorf("JSON output missing module: %s", data)
 	}
 }
@@ -235,19 +236,8 @@ func TestResolvePath_RelativeJoins(t *testing.T) {
 	}
 }
 
-// contains is a tiny helper because we want to use it on raw []byte
-// without converting to string first. Saves a few allocations in
-// tests that scan many fields.
+// contains reports whether needle appears in the byte slice haystack. It
+// wraps bytes.Contains so call sites can pass a string needle directly.
 func contains(haystack []byte, needle string) bool {
-	return len(haystack) >= len(needle) && indexOf(haystack, needle) >= 0
-}
-
-func indexOf(haystack []byte, needle string) int {
-	n := len(needle)
-	for i := 0; i+n <= len(haystack); i++ {
-		if string(haystack[i:i+n]) == needle {
-			return i
-		}
-	}
-	return -1
+	return bytes.Contains(haystack, []byte(needle))
 }

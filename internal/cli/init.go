@@ -32,9 +32,9 @@ func (c *InitCmd) Run(g *GlobalFlags) error {
 
 	if c.Module == "" && !c.Yes {
 		if !ui.IsTerminal(os.Stdin) {
-			return Exit(1, errors.New("non-interactive shell; pass --module, --spec, and --type-naming to scaffold"))
+			return Exit(1, errors.New("non-interactive shell; pass --module to scaffold (--spec and --type-naming are optional)"))
 		}
-		prompt := ui.Prompt{Out: g.stderr(), In: os.Stdin}
+		prompt := ui.Prompt{Out: g.stdout(), In: os.Stdin}
 		answer, perr := prompt.AskDefault("Client module path (e.g. github.com/acme/api/client):", "")
 		if perr != nil {
 			return Exit(1, fmt.Errorf("read module: %w", perr))

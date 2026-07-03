@@ -7,10 +7,16 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/webdeveloperben/tyche/server"
 )
+
+// codecBypassOnce guards the global codec registry so the bypass codec is
+// registered exactly once per test binary (RegisterGeneratedCodec panics on a
+// duplicate identity, which would break `go test -count=2`).
+var codecBypassOnce sync.Once
 
 type testCodec struct{ mediaType string }
 
@@ -252,18 +258,20 @@ func TestAPIConfigCodecsBypassJSONOnlyGeneratedCodec(t *testing.T) {
 		} `body:"true"`
 	}
 
-	server.RegisterGeneratedCodec(server.GeneratedRouteMeta{
-		OperationID:       "codec-generated-bypass",
-		Method:            http.MethodPost,
-		Path:              "/generated-bypass",
-		HasGeneratedCodec: true,
-	}, server.GeneratedRouteCodec{
-		Parse: func(*http.Request) (any, error) {
-			return nil, errors.New("generated JSON parser should have been bypassed")
-		},
-		Write: func(http.ResponseWriter, *http.Request, any) error {
-			return errors.New("generated JSON writer should have been bypassed")
-		},
+	codecBypassOnce.Do(func() {
+		server.RegisterGeneratedCodec(server.GeneratedRouteMeta{
+			OperationID:       "codec-generated-bypass",
+			Method:            http.MethodPost,
+			Path:              "/generated-bypass",
+			HasGeneratedCodec: true,
+		}, server.GeneratedRouteCodec{
+			Parse: func(*http.Request) (any, error) {
+				return nil, errors.New("generated JSON parser should have been bypassed")
+			},
+			Write: func(http.ResponseWriter, *http.Request, any) error {
+				return errors.New("generated JSON writer should have been bypassed")
+			},
+		})
 	})
 
 	api := server.NewAPI(server.NewServeMuxAdapter(), server.APIConfig{

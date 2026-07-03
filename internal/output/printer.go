@@ -116,9 +116,15 @@ func writeHuman(out io.Writer, v any) error {
 	case error:
 		_, err := fmt.Fprintln(out, x.Error())
 		return err
+	case fmt.Stringer:
+		_, err := fmt.Fprintln(out, x.String())
+		return err
 	}
-	_, err := fmt.Fprintf(out, "%v\n", v)
-	return err
+	// Commands must hand human mode a string/error/Stringer, not an
+	// arbitrary struct or map — the "%v" Go-syntax rendering that would
+	// produce (e.g. "map[out:./client]") is not user-facing output. Callers
+	// that need structured data should select --format=json instead.
+	return fmt.Errorf("output: cannot render %T in human mode (use --format=json)", v)
 }
 
 // --- json printer --------------------------------------------------------
