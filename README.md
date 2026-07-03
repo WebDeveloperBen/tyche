@@ -336,7 +336,7 @@ if errors.As(err, &apiErr) && apiErr.StatusCode == 404 { /* ... */ }
 Because the client is its own module with its own tags, consumers
 `go get …/client@vX.Y.Z` and the contract is checked at compile time. SSE
 operations generate a streaming method returning a typed `*Stream[Event]`
-(scanner API: `Next`/`Event`/`Err`/`Close`).
+(scanner API: `Next`/`Event`/`EventName`/`ID`/`Retry`/`Err`/`Close`).
 
 String and integer enums generate a named type with typed constants, `allOf`
 compositions of objects are merged into a single struct (keeping the component

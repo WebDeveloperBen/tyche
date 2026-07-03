@@ -41,7 +41,8 @@ A dependency-free Go module that imports only the standard library:
   operation-scoped with `--type-naming operation-scoped`)
 - one method per OpenAPI operation
 - typed `application/problem+json` errors (surfaced as `*APIError`)
-- typed Server-Sent Events streaming methods for `text/event-stream` operations
+- typed Server-Sent Events streaming methods for `text/event-stream` operations,
+  including accessors for event name, ID, and retry metadata
 
 An existing `go.mod` in the output directory is left untouched so module-level
 customizations (a `replace`, a bumped `go` directive) survive regeneration.

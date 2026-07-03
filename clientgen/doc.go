@@ -24,6 +24,6 @@
 //	for _, f := range res.Files { os.WriteFile(filepath.Join(outDir, f.Name), f.Content, 0o644) }
 //
 // Server-Sent Events operations (text/event-stream) generate a streaming method
-// returning a typed *Stream[Event], iterated with the scanner pattern
-// (Next/Event/Err/Close).
+// returning a typed *Stream[Event], iterated with the scanner pattern. Event
+// name, ID, and retry metadata are available from the most recent event.
 package clientgen

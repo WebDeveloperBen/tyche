@@ -151,7 +151,7 @@ func TestGenerate_ExpectedFilesAndSymbols(t *testing.T) {
 	}
 
 	stream, _ := fileByName(res, "stream.go")
-	for _, want := range []string{"type Stream[O any] struct", "func (s *Stream[O]) Next() bool", "func (s *Stream[O]) Close() error"} {
+	for _, want := range []string{"type Stream[O any] struct", "func (s *Stream[O]) Next() bool", "func (s *Stream[O]) Retry() int", "func (s *Stream[O]) Close() error"} {
 		if !strings.Contains(stream, want) {
 			t.Errorf("stream.go missing %q", want)
 		}
@@ -362,6 +362,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -381,9 +382,16 @@ func TestRuntimeBehavior(t *testing.T) {
 		_, _ = w.Write([]byte(` + "`" + `{"type":"about:blank","title":"Bad","status":400,"detail":"nope"}` + "`" + `))
 	})
 	mux.HandleFunc("/stream", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream")
+		if r.Header.Get("X-Bad-Stream") == "1" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(` + "`" + `{"data":{"message":"not a stream"}}` + "`" + `))
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
 		f := w.(http.Flusher)
-		for _, m := range []string{"a", "b", "c"} {
+		_, _ = w.Write([]byte("event: token\nid: 1\nretry: 2500\ndata: {\"message\":\"a\"}\n\n"))
+		f.Flush()
+		for _, m := range []string{"b", "c"} {
 			_, _ = w.Write([]byte("data: {\"message\":\"" + m + "\"}\n\n"))
 			f.Flush()
 		}
@@ -426,6 +434,13 @@ func TestRuntimeBehavior(t *testing.T) {
 	defer s.Close()
 	var got []string
 	for s.Next() {
+		if len(got) == 0 {
+			if s.EventName() != "token" || s.ID() != "1" || s.Retry() != 2500 {
+				t.Fatalf("stream metadata wrong: event=%q id=%q retry=%d", s.EventName(), s.ID(), s.Retry())
+			}
+		} else if s.EventName() != "" || s.ID() != "" || s.Retry() != 0 {
+			t.Fatalf("stream metadata leaked: event=%q id=%q retry=%d", s.EventName(), s.ID(), s.Retry())
+		}
 		got = append(got, s.Event().Message)
 	}
 	if err := s.Err(); err != nil {
@@ -433,6 +448,18 @@ func TestRuntimeBehavior(t *testing.T) {
 	}
 	if len(got) != 3 || got[0] != "a" || got[2] != "c" {
 		t.Errorf("stream events wrong: %v", got)
+	}
+
+	bad, err := c.StreamEvents(context.Background(), &StreamEventsInput{},
+		WithRequestHeader("X-Bad-Stream", "1"))
+	if err == nil {
+		if bad != nil {
+			_ = bad.Close()
+		}
+		t.Fatal("expected content-type error for non-SSE 2xx stream response")
+	}
+	if !strings.Contains(err.Error(), ` + "`" + `text/event-stream` + "`" + `) || !strings.Contains(err.Error(), ` + "`" + `application/json` + "`" + `) {
+		t.Fatalf("unexpected content-type error: %v", err)
 	}
 }
 `

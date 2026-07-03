@@ -25,9 +25,11 @@ const streamImports = `import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 )`
 
@@ -49,6 +51,7 @@ type Stream[O any] struct {
 	cur    O
 	event  string
 	id     string
+	retry  int
 	err    error
 }
 
@@ -66,6 +69,7 @@ func (s *Stream[O]) Next() bool {
 	sawData := false
 	s.event = ""
 	s.id = ""
+	s.retry = 0
 	for {
 		line, err := s.reader.ReadString('\n')
 		if len(line) > 0 {
@@ -91,6 +95,10 @@ func (s *Stream[O]) Next() bool {
 					s.event = value
 				case "id":
 					s.id = value
+				case "retry":
+					if retry, err := strconv.Atoi(value); err == nil && retry >= 0 {
+						s.retry = retry
+					}
 				}
 			}
 		}
@@ -126,6 +134,10 @@ func (s *Stream[O]) EventName() string { return s.event }
 // ID returns the SSE "id" field of the most recent event, if any.
 func (s *Stream[O]) ID() string { return s.id }
 
+// Retry returns the SSE "retry" field of the most recent event in milliseconds,
+// or zero when the field was not present.
+func (s *Stream[O]) Retry() int { return s.retry }
+
 // Err returns the first non-EOF error encountered while streaming.
 func (s *Stream[O]) Err() error { return s.err }
 
@@ -160,7 +172,19 @@ func doStream[O any](ctx context.Context, c *CLIENTTYPE, method, path string, qu
 		_ = resp.Body.Close()
 		return nil, parseAPIError(resp.StatusCode, data)
 	}
+	if !isEventStreamResponse(resp) {
+		_ = resp.Body.Close()
+		return nil, fmt.Errorf("expected a text/event-stream response but got Content-Type %q", resp.Header.Get("Content-Type"))
+	}
 	return newStream[O](resp), nil
+}
+
+func isEventStreamResponse(resp *http.Response) bool {
+	ct := resp.Header.Get("Content-Type")
+	if i := strings.IndexByte(ct, ';'); i >= 0 {
+		ct = ct[:i]
+	}
+	return strings.EqualFold(strings.TrimSpace(ct), "text/event-stream")
 }
 `
 
