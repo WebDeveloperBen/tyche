@@ -22,7 +22,24 @@ type Options struct {
 	GoVersion string
 	// ClientName is the generated client type name. Defaults to "Client".
 	ClientName string
+	// TypeNamingStrategy controls whether structurally identical schemas share
+	// one generated Go type or receive operation-scoped names. The zero value
+	// preserves the historical structural deduplication behaviour.
+	TypeNamingStrategy TypeNamingStrategy
 }
+
+// TypeNamingStrategy controls how generated schema types are named and reused.
+type TypeNamingStrategy int
+
+const (
+	// TypeNamingStructural deduplicates schemas by structural identity. When a
+	// shape also appears under components.schemas, that component name is used.
+	TypeNamingStructural TypeNamingStrategy = iota
+	// TypeNamingOperationScoped gives each operation body/output/event context
+	// its own generated type, even when another operation has an identical
+	// schema shape.
+	TypeNamingOperationScoped
+)
 
 // File is a generated output file (relative path + contents).
 type File struct {
@@ -45,6 +62,9 @@ func Generate(doc *Document, opts Options) (*Result, error) {
 	if strings.TrimSpace(opts.Module) == "" {
 		return nil, errors.New("clientgen: Options.Module is required")
 	}
+	if opts.TypeNamingStrategy != TypeNamingStructural && opts.TypeNamingStrategy != TypeNamingOperationScoped {
+		return nil, fmt.Errorf("clientgen: unknown TypeNamingStrategy %d", opts.TypeNamingStrategy)
+	}
 
 	pkg := opts.Package
 	if pkg == "" {
@@ -59,7 +79,7 @@ func Generate(doc *Document, opts Options) (*Result, error) {
 		goVersion = "1.22"
 	}
 
-	ts := newTypeSet(doc)
+	ts := newTypeSet(doc, opts.TypeNamingStrategy)
 	ops := buildOperations(ts, doc)
 
 	files := []File{

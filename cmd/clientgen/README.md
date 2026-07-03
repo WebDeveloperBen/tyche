@@ -16,26 +16,29 @@ go install github.com/webdeveloperben/tyche/cmd/clientgen@latest
 go run ./cmd/clientgen \
   --spec ./openapi.json \
   --out ./client \
-  --module github.com/you/app/client
+  --module github.com/you/app/client \
+  --type-naming structural
 ```
 
 ## Flags
 
-| Flag            | Required | Description                                                        |
-| --------------- | -------- | ------------------------------------------------------------------ |
-| `--spec`        | yes      | Path to the OpenAPI JSON document                                  |
-| `--out`         | yes      | Output directory for the generated client module                   |
-| `--module`      | yes      | Go module path for the generated client                            |
-| `--package`     | no       | Package name for generated files (default: derived from module)    |
-| `--go`          | no       | `go` directive for the generated `go.mod` (default: 1.22)          |
-| `--client-name` | no       | Generated client type name (default: `Client`)                     |
+| Flag            | Required | Description                                                             |
+| --------------- | -------- | ----------------------------------------------------------------------- |
+| `--spec`        | yes      | Path to the OpenAPI JSON document                                       |
+| `--out`         | yes      | Output directory for the generated client module                        |
+| `--module`      | yes      | Go module path for the generated client                                 |
+| `--package`     | no       | Package name for generated files (default: derived from module)         |
+| `--go`          | no       | `go` directive for the generated `go.mod` (default: 1.22)               |
+| `--client-name` | no       | Generated client type name (default: `Client`)                          |
+| `--type-naming` | no       | `structural` or `operation-scoped` (default: `structural`)              |
 
 ## What it generates
 
 A dependency-free Go module that imports only the standard library:
 
 - its own `go.mod`
-- request/response types (one clean Go type per structurally-distinct schema)
+- request/response types (structurally deduplicated by default, or
+  operation-scoped with `--type-naming operation-scoped`)
 - one method per OpenAPI operation
 - typed `application/problem+json` errors (surfaced as `*APIError`)
 - typed Server-Sent Events streaming methods for `text/event-stream` operations

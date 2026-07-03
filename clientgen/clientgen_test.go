@@ -222,6 +222,87 @@ func TestGenerate_AllOfMergesToStruct(t *testing.T) {
 	}
 }
 
+const namingStrategySpec = `{
+  "openapi":"3.1.0","info":{"title":"Names","version":"1.0.0"},
+  "paths":{
+    "/alpha":{"get":{"operationId":"alpha","responses":{"200":{"description":"ok","content":{"application/json":{"schema":{"type":"object","properties":{"data":{"type":"object","properties":{"id":{"type":"string"}},"required":["id"]}}}}}}}}},
+    "/beta":{"get":{"operationId":"beta","responses":{"200":{"description":"ok","content":{"application/json":{"schema":{"type":"object","properties":{"data":{"type":"object","properties":{"id":{"type":"string"}},"required":["id"]}}}}}}}}}
+  },
+  "components":{"schemas":{}}
+}`
+
+func TestGenerate_DefaultTypeNamingDeduplicatesStructurally(t *testing.T) {
+	doc, err := clientgen.ParseDocument([]byte(namingStrategySpec))
+	if err != nil {
+		t.Fatalf("ParseDocument: %v", err)
+	}
+	res, err := clientgen.Generate(doc, clientgen.Options{Module: "example.com/names/client"})
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+
+	ops := normalizeWS(mustFile(res, "operations.go"))
+	types := normalizeWS(mustFile(res, "types.go"))
+
+	if !strings.Contains(ops, "func (c *Client) Alpha(ctx context.Context, in *AlphaInput, opts ...CallOption) (*AlphaOutput, error)") {
+		t.Errorf("alpha should return AlphaOutput:\n%s", mustFile(res, "operations.go"))
+	}
+	if !strings.Contains(ops, "func (c *Client) Beta(ctx context.Context, in *BetaInput, opts ...CallOption) (*AlphaOutput, error)") {
+		t.Errorf("default structural naming should reuse AlphaOutput for beta:\n%s", mustFile(res, "operations.go"))
+	}
+	if strings.Count(types, "type AlphaOutput struct") != 1 {
+		t.Errorf("expected one shared AlphaOutput type:\n%s", mustFile(res, "types.go"))
+	}
+	if strings.Contains(types, "type BetaOutput struct") {
+		t.Errorf("default structural naming should not emit BetaOutput:\n%s", mustFile(res, "types.go"))
+	}
+}
+
+func TestGenerate_OperationScopedTypeNamingKeepsOperationTypesDistinct(t *testing.T) {
+	doc, err := clientgen.ParseDocument([]byte(namingStrategySpec))
+	if err != nil {
+		t.Fatalf("ParseDocument: %v", err)
+	}
+	res, err := clientgen.Generate(doc, clientgen.Options{
+		Module:             "example.com/names/client",
+		TypeNamingStrategy: clientgen.TypeNamingOperationScoped,
+	})
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+
+	ops := normalizeWS(mustFile(res, "operations.go"))
+	types := normalizeWS(mustFile(res, "types.go"))
+
+	for _, want := range []string{
+		"func (c *Client) Alpha(ctx context.Context, in *AlphaInput, opts ...CallOption) (*AlphaOutput, error)",
+		"func (c *Client) Beta(ctx context.Context, in *BetaInput, opts ...CallOption) (*BetaOutput, error)",
+	} {
+		if !strings.Contains(ops, want) {
+			t.Errorf("operations.go missing %q:\n%s", want, mustFile(res, "operations.go"))
+		}
+	}
+	for _, want := range []string{"type AlphaOutput struct", "type BetaOutput struct"} {
+		if !strings.Contains(types, want) {
+			t.Errorf("types.go missing %q:\n%s", want, mustFile(res, "types.go"))
+		}
+	}
+}
+
+func TestGenerate_RejectsUnknownTypeNamingStrategy(t *testing.T) {
+	doc, err := clientgen.ParseDocument([]byte(namingStrategySpec))
+	if err != nil {
+		t.Fatalf("ParseDocument: %v", err)
+	}
+	_, err = clientgen.Generate(doc, clientgen.Options{
+		Module:             "example.com/names/client",
+		TypeNamingStrategy: clientgen.TypeNamingStrategy(99),
+	})
+	if err == nil || !strings.Contains(err.Error(), "unknown TypeNamingStrategy") {
+		t.Fatalf("expected unknown strategy error, got %v", err)
+	}
+}
+
 func mustFile(res *clientgen.Result, name string) string {
 	s, _ := fileByName(res, name)
 	return s

@@ -8,16 +8,18 @@ import (
 )
 
 // typeSet assigns Go type declarations to the (inlined) schemas found while
-// walking operations. Schemas are deduplicated by structural identity so a
-// shape that appears in several operations — and as a named entry in
-// components.schemas — collapses to a single Go type with a clean name.
+// walking operations. By default, schemas are deduplicated by structural
+// identity so a shape that appears in several operations — and as a named entry
+// in components.schemas — collapses to a single Go type with a clean name.
 type typeSet struct {
 	doc            *Document
-	byKey          map[string]string // structural key -> assigned Go type name
+	naming         TypeNamingStrategy
+	byKey          map[string]string // naming-strategy key -> assigned Go type name
 	structs        []*structType
 	enums          []*enumType
 	taken          map[string]bool
 	componentNames map[string]string // structural key -> preferred name from components.schemas
+	building       map[*Schema]string
 	notices        []string
 }
 
@@ -42,12 +44,14 @@ type enumType struct {
 	Values []string
 }
 
-func newTypeSet(doc *Document) *typeSet {
+func newTypeSet(doc *Document, naming TypeNamingStrategy) *typeSet {
 	ts := &typeSet{
 		doc:            doc,
+		naming:         naming,
 		byKey:          map[string]string{},
 		taken:          map[string]bool{},
 		componentNames: map[string]string{},
+		building:       map[*Schema]string{},
 	}
 	// Recover clean names for the structures that appear as named components.
 	if doc.Components != nil {
@@ -130,17 +134,28 @@ func (ts *typeSet) mapType(s *Schema, ctx string) string {
 }
 
 func (ts *typeSet) namedStruct(s *Schema, ctx string) string {
-	key := ts.canonical(s, nil)
+	s = ts.doc.resolve(s)
+	if s == nil {
+		return "json.RawMessage"
+	}
+	if name, ok := ts.building[s]; ok {
+		return name
+	}
+
+	structuralKey := ts.canonical(s, nil)
+	key := ts.typeKey(structuralKey, ctx)
 	if name, ok := ts.byKey[key]; ok {
 		return name
 	}
 
-	name := ts.componentNames[key]
+	name := ts.typeName(structuralKey, ctx)
 	if name == "" {
 		name = exportedName(ctx)
 	}
 	name = uniqueName(name, ts.taken)
 	ts.byKey[key] = name // reserve before recursing (guards self-reference)
+	ts.building[s] = name
+	defer delete(ts.building, s)
 
 	st := &structType{Name: name, Doc: strings.TrimSpace(s.Description)}
 	required := map[string]bool{}
@@ -173,11 +188,16 @@ func (ts *typeSet) namedStruct(s *Schema, ctx string) string {
 }
 
 func (ts *typeSet) namedEnum(s *Schema, ctx string) string {
-	key := ts.canonical(s, nil)
+	s = ts.doc.resolve(s)
+	if s == nil {
+		return "json.RawMessage"
+	}
+	structuralKey := ts.canonical(s, nil)
+	key := ts.typeKey(structuralKey, ctx)
 	if name, ok := ts.byKey[key]; ok {
 		return name
 	}
-	name := ts.componentNames[key]
+	name := ts.typeName(structuralKey, ctx)
 	if name == "" {
 		name = exportedName(ctx)
 	}
@@ -196,6 +216,20 @@ func (ts *typeSet) namedEnum(s *Schema, ctx string) string {
 	}
 	ts.enums = append(ts.enums, &enumType{Name: name, Base: base, Values: values, Doc: strings.TrimSpace(s.Description)})
 	return name
+}
+
+func (ts *typeSet) typeKey(structuralKey, ctx string) string {
+	if ts.naming == TypeNamingOperationScoped {
+		return exportedName(ctx) + "\x00" + structuralKey
+	}
+	return structuralKey
+}
+
+func (ts *typeSet) typeName(structuralKey, ctx string) string {
+	if ts.naming == TypeNamingOperationScoped {
+		return exportedName(ctx)
+	}
+	return ts.componentNames[structuralKey]
 }
 
 // enumLiteral renders an enum value for a Go constant of the given base type.

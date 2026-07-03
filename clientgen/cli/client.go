@@ -17,7 +17,7 @@ import (
 // "clientgen" yields the standalone binary's root command; passing "client"
 // yields the servergen subcommand. Both share identical flags and behavior.
 func NewCommand(use string) *cobra.Command {
-	var specPath, outDir, module, pkg, goVersion, clientName string
+	var specPath, outDir, module, pkg, goVersion, clientName, typeNaming string
 
 	cmd := &cobra.Command{
 		Use:   use,
@@ -37,6 +37,10 @@ func NewCommand(use string) *cobra.Command {
 			if module == "" {
 				return errors.New("--module is required")
 			}
+			typeNamingStrategy, err := parseTypeNamingStrategy(typeNaming)
+			if err != nil {
+				return err
+			}
 
 			data, err := os.ReadFile(specPath)
 			if err != nil {
@@ -47,10 +51,11 @@ func NewCommand(use string) *cobra.Command {
 				return err
 			}
 			res, err := clientgen.Generate(doc, clientgen.Options{
-				Module:     module,
-				Package:    pkg,
-				GoVersion:  goVersion,
-				ClientName: clientName,
+				Module:             module,
+				Package:            pkg,
+				GoVersion:          goVersion,
+				ClientName:         clientName,
+				TypeNamingStrategy: typeNamingStrategy,
 			})
 			if err != nil {
 				return err
@@ -92,7 +97,19 @@ func NewCommand(use string) *cobra.Command {
 	cmd.Flags().StringVar(&pkg, "package", "", "Package name for generated files (default: derived from module)")
 	cmd.Flags().StringVar(&goVersion, "go", "", "go directive for the generated go.mod (default: 1.22)")
 	cmd.Flags().StringVar(&clientName, "client-name", "", "Generated client type name (default: Client)")
+	cmd.Flags().StringVar(&typeNaming, "type-naming", "structural", "Generated type naming strategy: structural or operation-scoped")
 	return cmd
+}
+
+func parseTypeNamingStrategy(value string) (clientgen.TypeNamingStrategy, error) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "structural":
+		return clientgen.TypeNamingStructural, nil
+	case "operation-scoped", "operation_scoped", "operation":
+		return clientgen.TypeNamingOperationScoped, nil
+	default:
+		return clientgen.TypeNamingStructural, fmt.Errorf("unknown --type-naming %q (want structural or operation-scoped)", value)
+	}
 }
 
 // generatedClientMarker is the header tyche clientgen writes on every generated

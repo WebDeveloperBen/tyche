@@ -312,6 +312,8 @@ servergen build -o ./bin/api ./cmd/api  # generate, then build
 servergen run ./cmd/api                 # generate, then run
 servergen test ./...                    # generate, then test
 servergen client --spec openapi.json --out ./client --module github.com/you/app/client
+# optional: keep distinct output/body/event types per operation
+servergen client --spec openapi.json --out ./client --module github.com/you/app/client --type-naming operation-scoped
 ```
 
 Optional staging excludes go in `.servergenignore`.
@@ -341,10 +343,12 @@ compositions of objects are merged into a single struct (keeping the component
 name), and a success response in a non-JSON media type returns `[]byte` rather
 than being decoded or dropped.
 
-**Current limitations:** structural dedup means two distinct shapes with
-identical structure share one Go type (most relevant for tyche's fully-inlined
-specs); and `oneOf`/`anyOf` unions plus non-object `allOf` compositions are
-emitted as `json.RawMessage`.
+By default, structurally identical schemas share one generated Go type. Use
+`--type-naming operation-scoped` when distinct operations should keep distinct
+body/output/event types even if their schemas have the same shape.
+
+**Current limitations:** `oneOf`/`anyOf` unions plus non-object `allOf`
+compositions are emitted as `json.RawMessage`.
 
 ## Benchmarks
 

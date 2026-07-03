@@ -10,6 +10,9 @@
 // Types are recovered from the document by walking each operation's (inlined)
 // schemas and deduplicating by structural identity, so shapes that also appear
 // as named entries in components.schemas collapse to a single clean Go type.
+// Set Options.TypeNamingStrategy to TypeNamingOperationScoped when distinct
+// operations should generate distinct Go types even if their schemas are
+// structurally identical.
 //
 // Typical use is via the `servergen client` CLI command; Generate is the
 // programmatic entry point:
