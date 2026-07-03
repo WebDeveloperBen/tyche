@@ -39,6 +39,12 @@ pre-commit:
         - "*.go"
         - "go.mod"
         - "go.sum"
+        - "internal/cli/**/*.go"
+        - "internal/app/**/*.go"
+        - "internal/output/**/*.go"
+        - "internal/ui/**/*.go"
+        - "internal/version/**/*.go"
+        - "cmd/tyche/**/*.go"
       group:
         parallel: true
         jobs:
@@ -48,3 +54,5 @@ pre-commit:
             run: golangci-lint run ./...
           - name: test
             run: go test ./...
+          - name: cli
+            run: task verify:cli

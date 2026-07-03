@@ -57,7 +57,12 @@ lefthook install          # sets up the pre-commit hook
 task tests                # full suite in a generated worktree
 go build -o ./bin/tyche ./cmd/tyche
 ./bin/tyche --help
+task verify:cli           # smoke-test the CLI surface
 ```
+
+Cross-router benchmarks live in `benchmarks/comparison/` as their own
+sub-module so chi/gin/huma don't leak into your tyche build. Run them
+with `cd benchmarks/comparison && go test -bench=.`.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the day-to-day dev loop, the test
 shapes, and the rules for breaking changes.
@@ -230,7 +235,9 @@ func (a *ChiAdapter) ServeHTTP(w http.ResponseWriter, r *http.Request) { a.mux.S
 
 tyche does **not** ship chi/gin/fiber adapters — that would bind the module to
 those routers' versions. The interface is the contract; a reference chi adapter
-lives in `server/adapter_spike_test.go` to copy from.
+lives in `benchmarks/comparison/adapter_chi_test.go` (a separate sub-module
+that pulls in chi only for the comparison benchmarks) and can be copied
+into your project as-is.
 
 ## Typed routes and generated codecs
 
@@ -442,6 +449,9 @@ tyche test ./...                         # generate, then test
 tyche client                             # regenerate the typed client from spec
 # optional: keep distinct output/body/event types per operation
 tyche client --type-naming operation-scoped
+
+tyche version                            # print build identity
+tyche completion bash > /etc/bash_completion.d/tyche
 ```
 
 A `tyche.json` at the project root holds the inputs the CLI would otherwise take
@@ -449,6 +459,30 @@ as flags. Discovery walks up from cwd to the first `go.mod`. Flags always
 override file values. Pass `--config <path>` to point at a non-default file or
 `--quiet` to suppress the "using config ..." line. Set `TYCHE_CONFIG` to point
 the CLI at a specific file via the environment.
+
+Every command honours a global `--format` flag (`human|json|quiet`). Use
+`--format=json` to get machine-readable output suitable for `| jq`; use
+`--format=quiet` in CI and scripts where you only want the data line.
+
+### Embedding the CLI use-cases
+
+The CLI is split so the use-case logic (scaffold, generate, regenerate
+client, worktree plumbing) lives in `internal/app` and is reachable
+without the CLI. If you embed tyche in your own tooling:
+
+```go
+import "github.com/webdeveloperben/tyche/internal/app"
+
+written, err := app.Scaffold(app.ScaffoldOptions{
+    Root:   "/path/to/project",
+    Module: "github.com/acme/api/client",
+    Force:  false,
+})
+```
+
+`internal/app` takes plain Go values; the CLI is a thin Kong adapter on
+top. The servergen, clientgen, and server packages never import
+`internal/cli` or any CLI framework.
 
 ## Generated Go client
 

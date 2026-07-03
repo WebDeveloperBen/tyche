@@ -1,8 +1,8 @@
-//go:build comparison
-// +build comparison
-
-// go:build comparison
-package server_test
+// Package comparison holds the cross-router benchmarks that compare tyche's
+// stdlib-backed router to chi, gin, and huma+chi. It lives in its own
+// sub-module so those third-party router dependencies do not leak into the
+// main tyche module's dep graph; running these benchmarks is opt-in.
+package comparison_test
 
 import (
 	"bytes"

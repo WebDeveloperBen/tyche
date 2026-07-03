@@ -159,6 +159,28 @@ tasks:
     cmds:
       - go test ./...
 
+  verify:cli:
+    desc: "Smoke-test the tyche CLI: --help, --version, completion, and one subcommand per verb through a tmpdir"
+    cmds:
+      - go build -o "{{.TASK_DIR}}/bin/tyche" ./cmd/tyche
+      - "{{.TASK_DIR}}/bin/tyche --help"
+      - "{{.TASK_DIR}}/bin/tyche version"
+      - "{{.TASK_DIR}}/bin/tyche completion bash > /dev/null"
+      - "{{.TASK_DIR}}/bin/tyche completion zsh > /dev/null"
+      - "{{.TASK_DIR}}/bin/tyche completion fish > /dev/null"
+      - |
+        set -e
+        CLI="{{.TASK_DIR}}/bin/tyche"
+        WORK=$(mktemp -d)
+        trap "rm -rf $WORK" EXIT
+        cd "$WORK"
+        $CLI init --module github.com/acme/api/client --yes --root .
+        test -f tyche.json
+        $CLI config show --quiet --root .
+        $CLI config show --format=json --quiet --root . | grep -q '"version"'
+        # Unknown flag should exit non-zero (and so should missing required args).
+        ( ! $CLI build --root . ) || (echo "build without args should fail" && exit 1)
+
   verify:
     desc: Run every lefthook pre-commit check in sequence; exit on the first failure
     cmds:
@@ -167,6 +189,7 @@ tasks:
       - task: verify:build
       - task: verify:lint
       - task: verify:test
+      - task: verify:cli
 
   benchmark:regen-fixtures:
     desc: Regenerate benchmark fixture codecs
@@ -180,7 +203,7 @@ tasks:
       - GOCACHE="{{.TASK_DIR}}/.gocache" go test -run '^$' -bench 'Benchmark(Router_|TypedRoute_)' -benchmem ./server
 
   benchmark:comparison:
-    desc: Regenerate benchmark fixtures and run the cross-framework comparison benchmarks
+    desc: Regenerate benchmark fixtures and run the cross-framework comparison benchmarks (in the comparison sub-module)
     cmds:
       - task benchmark:regen-fixtures
-      - GOCACHE="{{.TASK_DIR}}/.gocache" go test -tags comparison -run '^$' -bench 'BenchmarkRouter_(Static|Param|Body|Nested)$' -benchmem ./server
+      - cd benchmarks/comparison && GOCACHE="{{.TASK_DIR}}/.gocache" go test -run '^$' -bench 'BenchmarkRouter_(Static|Param|Body|Nested)$' -benchmem ./...
