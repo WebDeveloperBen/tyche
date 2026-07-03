@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/webdeveloperben/tyche/server"
 )
 
@@ -50,64 +49,6 @@ func TestServeMuxAdapterForwardsHijack(t *testing.T) {
 	if !rec.hijacked {
 		t.Fatal("Hijack did not reach the underlying writer")
 	}
-}
-
-// chiTestAdapter is a reference server.Adapter over github.com/go-chi/chi. It
-// lives in the test suite rather than in a shipped package: the Adapter
-// interface is the contract, and a third-party router adapter is ~40 lines of
-// user-land glue. This doubles as the proof that a foreign router works
-// unchanged and as the copy-paste example for anyone wiring chi/gin/fiber.
-type chiTestAdapter struct{ mux chi.Router }
-
-func newChiAdapter() *chiTestAdapter { return &chiTestAdapter{mux: chi.NewRouter()} }
-
-var _ server.Adapter = (*chiTestAdapter)(nil)
-
-func (a *chiTestAdapter) Handle(method, path string, h http.Handler) {
-	// Bridge chi's RouteContext params onto req.PathValue so tyche's binders
-	// (which read req.PathValue) resolve them with no special-casing.
-	bridged := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if rctx := chi.RouteContext(r.Context()); rctx != nil {
-			for i, key := range rctx.URLParams.Keys {
-				r.SetPathValue(key, rctx.URLParams.Values[i])
-			}
-		}
-		h.ServeHTTP(w, r)
-	})
-	a.mux.Method(method, toChiPattern(path), bridged)
-}
-
-func (a *chiTestAdapter) SetFallback(notFound, methodNotAllowed http.Handler) {
-	if notFound != nil {
-		a.mux.NotFound(notFound.ServeHTTP)
-	}
-	if methodNotAllowed != nil {
-		a.mux.MethodNotAllowed(methodNotAllowed.ServeHTTP)
-	}
-}
-
-func (a *chiTestAdapter) ServeHTTP(w http.ResponseWriter, r *http.Request) { a.mux.ServeHTTP(w, r) }
-
-// toChiPattern converts tyche's "/things/:id/*rest" to chi's "/things/{id}/*".
-func toChiPattern(path string) string {
-	var b []byte
-	for _, part := range server.SplitRouteFast(path) {
-		b = append(b, '/')
-		switch {
-		case len(part) > 0 && part[0] == ':':
-			b = append(b, '{')
-			b = append(b, part[1:]...)
-			b = append(b, '}')
-		case len(part) > 0 && part[0] == '*':
-			b = append(b, '*')
-		default:
-			b = append(b, part...)
-		}
-	}
-	if len(b) == 0 {
-		return "/"
-	}
-	return string(b)
 }
 
 // --- fixtures -------------------------------------------------------------
@@ -199,7 +140,6 @@ func headerStamp(next http.Handler) http.Handler {
 func TestAdapterSpike(t *testing.T) {
 	adapters := map[string]func() server.Adapter{
 		"ServeMux": func() server.Adapter { return server.NewServeMuxAdapter() },
-		"Chi":      func() server.Adapter { return newChiAdapter() },
 	}
 
 	for name, mk := range adapters {
@@ -273,26 +213,18 @@ func TestAdapterSpike(t *testing.T) {
 }
 
 // TestAdapterWildcard verifies the trailing-wildcard tail resolves via
-// Wildcard(r) (i.e. Param(r, "*")) on both adapters — guarding the
+// Wildcard(r) (i.e. Param(r, "*")) on the stdlib adapter — guarding the
 // tree→adapter capture-name bridge.
 func TestAdapterWildcard(t *testing.T) {
-	adapters := map[string]func() server.Adapter{
-		"ServeMux": func() server.Adapter { return server.NewServeMuxAdapter() },
-		"Chi":      func() server.Adapter { return newChiAdapter() },
-	}
-	for name, mk := range adapters {
-		t.Run(name, func(t *testing.T) {
-			api := server.NewAPI(mk())
-			var star string
-			api.GET("/files/*", func(w http.ResponseWriter, r *http.Request) error {
-				star = server.Wildcard(r)
-				return nil
-			})
-			api.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/files/a/b/c.txt", nil))
-			if star != "a/b/c.txt" {
-				t.Fatalf("Wildcard() = %q, want %q", star, "a/b/c.txt")
-			}
-		})
+	api := server.NewAPI(server.NewServeMuxAdapter())
+	var star string
+	api.GET("/files/*", func(w http.ResponseWriter, r *http.Request) error {
+		star = server.Wildcard(r)
+		return nil
+	})
+	api.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/files/a/b/c.txt", nil))
+	if star != "a/b/c.txt" {
+		t.Fatalf("Wildcard() = %q, want %q", star, "a/b/c.txt")
 	}
 }
 
@@ -351,11 +283,11 @@ func TestHandleEConflictReturnsError(t *testing.T) {
 }
 
 // TestAdapterUseHTTP proves UseHTTP wraps the entire dispatch — its middleware
-// runs even on 404, on both adapters.
+// runs even on 404 on the stdlib adapter. (The chi variant of this test lives
+// in benchmarks/comparison/adapter_chi_test.go.)
 func TestAdapterUseHTTP(t *testing.T) {
 	adapters := map[string]func() server.Adapter{
 		"ServeMux": func() server.Adapter { return server.NewServeMuxAdapter() },
-		"Chi":      func() server.Adapter { return newChiAdapter() },
 	}
 	for name, mk := range adapters {
 		t.Run(name, func(t *testing.T) {
