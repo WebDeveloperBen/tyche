@@ -22,7 +22,7 @@ tasks:
     cmds:
       - mkdir -p cmd/api
       # A single-file main.go: types, routes, and main() all in package main.
-      # servergen keys main-package codecs under "main" (matching runtime
+      # tyche keys main-package codecs under "main" (matching runtime
       # reflect), so this works end to end.
       - |
         cat > cmd/api/main.go <<'GOEOF'
@@ -93,7 +93,7 @@ tasks:
     deps: [scaffold]
     cmds:
       - mkdir -p "{{.TASK_DIR}}/bin"
-      - go run ./cmd/servergen generate ./...
+      - go run ./cmd/tyche generate ./...
       - go build -o "{{.TASK_DIR}}/bin/api" ./cmd/api
 
   dev:
@@ -106,7 +106,7 @@ tasks:
     desc: Regenerate codecs and run the dev API once
     deps: [scaffold]
     cmds:
-      - go run ./cmd/servergen generate ./...
+      - go run ./cmd/tyche generate ./...
       - go run ./cmd/api
 
   clean:
@@ -117,7 +117,7 @@ tasks:
   tests:
     desc: Run all Go tests against a temporary generated worktree
     cmds:
-      - go run ./cmd/servergen test ./...
+      - go run ./cmd/tyche test ./...
 
   modernize:
     desc: Apply Go modernization fixes (min/max, slices, range-over-int, etc.) across the module
@@ -132,7 +132,7 @@ tasks:
   benchmark:regen-fixtures:
     desc: Regenerate benchmark fixture codecs
     cmds:
-      - go run ./cmd/servergen generate ./servergen/testdata/samplepkg/...
+      - go run ./cmd/tyche generate ./servergen/testdata/samplepkg/...
 
   benchmark:
     desc: Regenerate benchmark fixtures and run the benchmark suite

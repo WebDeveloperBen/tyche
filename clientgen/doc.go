@@ -14,7 +14,7 @@
 // operations should generate distinct Go types even if their schemas are
 // structurally identical.
 //
-// Typical use is via the `servergen client` CLI command; Generate is the
+// Typical use is via the `tyche client` command; Generate is the
 // programmatic entry point:
 //
 //	doc, _ := clientgen.ParseDocument(specJSON)

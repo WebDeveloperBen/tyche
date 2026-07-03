@@ -1,5 +1,46 @@
 # Changelog
 
+## Unreleased
+
+### Breaking changes
+
+- **Unified CLI.** The `servergen` and `clientgen` binaries are gone. Install
+  the single `tyche` binary instead: `go install github.com/webdeveloperben/tyche/cmd/tyche@latest`.
+  Subcommands: `init`, `config`, `generate`, `client`, `build`, `run`, `test`,
+  `clean`. `servergen client` → `tyche client`; `servergen generate` →
+  `tyche generate`. The two underlying libraries (`servergen`, `clientgen`) and
+  their `cli` packages remain importable for programmatic use.
+- **Codec interface (`client.Codec`).** `ContentType()` and `Accept()` are
+  collapsed into a single `MediaType() string`. Response-side compatibility
+  moves into a new `MatchesResponse(contentType string) bool` so each codec
+  owns its matching rules — the default `JSONCodec` matches `application/json`
+  and any `+json` vendor suffix. Legacy helpers (`defaultCodec`,
+  `isCodecResponse`, `typedResponseAccept`) are removed; `doJSON` no longer
+  takes the operation's accept list because the codec's `MediaType()` drives
+  the `Accept` header. Any third-party `client.Codec` implementation must
+  adopt the new shape.
+- **`.servergenignore` removed.** Use `server.ignore` in `tyche.json` instead.
+  No deprecation period; the file and its loader are gone.
+
+### Features
+
+- **`tyche.json` config file** (sqlc-style). Place at the project root; the
+  CLI discovers it by walking up from cwd to the first `go.mod`. Flags always
+  override file values. Use `--config <path>` or `TYCHE_CONFIG=<path>` to
+  point at a non-default file. Loader is `internal/config/`, stdlib
+  `encoding/json` only — no new dependencies.
+- **`tyche init`** scaffolds a `tyche.json` next to `go.mod`. Refuses to
+  overwrite without `--force`. Prompts for the client module; `--yes` plus
+  the right flags makes it non-interactive.
+- **`tyche config show`** prints the resolved config (path, every value,
+  source). `--json` for machine-readable output.
+- **Multipart request support** in generated clients. Operations with
+  `multipart/form-data` request bodies generate `form`, `file`, and `files`
+  input fields. File inputs use the generated `client.File` type.
+- **Strict 415 / 406 server-side.** JSON and multipart request bodies return
+  415 for unsupported `Content-Type`; JSON and SSE responses return 406 when
+  the request `Accept` header does not allow the produced media type.
+
 ## [1.1.1](https://github.com/WebDeveloperBen/tyche/compare/v1.1.0...v1.1.1) (2026-06-08)
 
 

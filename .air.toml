@@ -2,7 +2,7 @@ root = "."
 tmp_dir = "tmp/air"
 
 [build]
-cmd = "go run ./cmd/servergen generate ./... && go build -o ./tmp/air/api ./cmd/api"
+cmd = "go run ./cmd/tyche generate ./... && go build -o ./tmp/air/api ./cmd/api"
 bin = "./tmp/air/api"
 entrypoint = "./tmp/air/api"
 full_bin = "./tmp/air/api"

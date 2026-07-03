@@ -5,7 +5,7 @@ Typed Go HTTP handlers that generate their own OpenAPI spec — running over
 
 You write a handler as `func(ctx, *In) (*Out, error)`. tyche derives the OpenAPI
 operation from the types and binds/validates/serializes via reflection, so it
-runs with no build step. Optionally, `servergen` generates that binding,
+runs with no build step. Optionally, `tyche generate` emits that binding,
 validation, and serialization code ahead of time for a reflection-free fast path
 (like `sqlc`, but for HTTP I/O). Routing is delegated to a pluggable `Adapter` —
 the standard library `net/http.ServeMux` by default, or chi/gin/anything you
@@ -19,6 +19,48 @@ deliberately does **not** own routing. Path matching is a solved problem with
 several fast, battle-tested implementations, so tyche exposes a small `Adapter`
 interface and lets you choose. The core module depends only on the standard
 library; third-party routers are opt-in glue you supply.
+
+## Install
+
+There are two installs, depending on which side of the API you're on.
+
+**Using tyche in your own project** (you write a server, or generate a client
+from one). You need both — the Go packages for the imports to resolve, the CLI
+binary to drive `init` / `generate` / `client` / `test` / `build` / `run`.
+
+```sh
+# 1. Add tyche to your go.mod:
+go get github.com/webdeveloperben/tyche
+
+# 2. Install the tyche CLI once. It lives on $GOPATH/bin and works from
+#    any project directory:
+go install github.com/webdeveloperben/tyche/cmd/tyche@latest
+
+# 3. In your project, scaffold the config (one file, committed to git):
+cd myproject
+tyche init --module github.com/me/myproject/client --yes
+tyche generate            # emits server codecs, if you have any
+tyche client              # regenerates the typed client from spec
+```
+
+The CLI is a single binary; you do **not** add it to your project's go.mod. The
+libraries (`server`, `server/apidocs`, `server/plugins`, `clientgen`, etc.) are
+regular Go packages you import and version through your go.mod.
+
+**Working on tyche itself.** Clone, install the toolchain, run the task suite:
+
+```sh
+git clone https://github.com/webdeveloperben/tyche
+cd tyche
+mise install              # installs the pinned Go version
+lefthook install          # sets up the pre-commit hook
+task tests                # full suite in a generated worktree
+go build -o ./bin/tyche ./cmd/tyche
+./bin/tyche --help
+```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the day-to-day dev loop, the test
+shapes, and the rules for breaking changes.
 
 ## Quick start
 
@@ -76,14 +118,59 @@ func main() {
 }
 ```
 
-This runs as-is — no build step. Typed routes bind, validate, and serialize via
-reflection out of the box, so `go run` just works. Running `servergen` generates
-zero-reflection codecs that replace the reflection path for a speed-up; it is an
-optimization, not a requirement:
+With tyche installed (see the section above), this runs as-is — `go run .` is
+enough. Typed routes bind, validate, and serialize via reflection out of the box.
+Running `tyche generate` emits zero-reflection codecs that replace the reflection
+path for a speed-up; it is an optimization, not a requirement:
 
 ```sh
-servergen generate ./...   # optional: emit zero-reflection codecs
+tyche generate ./...   # optional: emit zero-reflection codecs
 ```
+
+### Build your own API
+
+The Quick Start above is the whole shape; this is the literal end-to-end flow
+from a fresh directory to a running server with generated codecs.
+
+```sh
+# 1. Create a project.
+mkdir myapi && cd myapi
+go mod init github.com/me/myapi
+
+# 2. Add tyche.
+go get github.com/webdeveloperben/tyche
+go install github.com/webdeveloperben/tyche/cmd/tyche@latest
+
+# 3. Drop the Quick Start code into main.go (or any package).
+
+# 4. Scaffold the config.
+tyche init --module github.com/me/myapi/client --yes
+
+# 5. Generate codecs (writes zz_server_routes_gen.go next to main.go).
+tyche generate
+
+# 6. Run.
+go run .
+# curl localhost:8080/api/users/u1
+```
+
+The generated `zz_server_routes_gen.go` next to `main.go` is registered in an
+`init()` and replaces the reflection path for the route defined in
+`server.Register`. Both paths produce byte-identical responses, so the
+generated file is an optimization, not a behaviour change. Delete it and the
+reflection path takes over with no other edits.
+
+If you want to skip the reflection path entirely, build with a flag:
+
+```sh
+tyche build -o ./bin/api .        # generate, then go build .
+tyche run .                       # generate, then go run .
+tyche test ./...                  # generate, then go test ./...
+```
+
+These all run `go run`/`go build`/`go test` against a temporary copy of your
+project with codecs generated in place, so the real working tree is never
+touched by generated code.
 
 ## The adapter model
 
@@ -154,7 +241,7 @@ field, `body` tag, or JSON-tagged fields) or a multipart form body (`form`,
 and status.
 
 By default this runs through a reflection binder — no codegen step, so iterating
-with `go run` is friction-free. `servergen` then inspects each
+with `go run` is friction-free. `tyche generate` then inspects each
 `server.Register(...)` call and emits a codec (`zz_server_routes_gen.go`) that
 does the binding, validation, and serialization with hand-written byte-level
 code and **no runtime reflection** — conceptually the same trade `sqlc` makes for
@@ -179,7 +266,7 @@ registered by default, and typed route OpenAPI content maps include configured
 codec media types for JSON request and success bodies.
 
 Route input/output types may live anywhere, including a single-file `package
-main` — servergen keys main-package codecs to match Go's runtime reflection, so
+main` — tyche keys main-package codecs to match Go's runtime reflection, so
 the small everything-in-`main.go` app works end to end.
 
 ## Middleware
@@ -342,22 +429,30 @@ problem := servertest.DecodeProblem(t, client.GET("/secret").AssertStatus(401))
 ## CLI
 
 ```sh
-go install ./cmd/servergen
+go install github.com/webdeveloperben/tyche/cmd/tyche@latest
 
-servergen generate ./...                # emit codecs
-servergen build -o ./bin/api ./cmd/api  # generate, then build
-servergen run ./cmd/api                 # generate, then run
-servergen test ./...                    # generate, then test
-servergen client --spec openapi.json --out ./client --module github.com/you/app/client
+tyche init                               # scaffold tyche.json next to go.mod
+tyche config show                        # show the resolved config
+
+tyche generate ./...                     # emit server codecs
+tyche build -o ./bin/api ./cmd/api       # generate, then build
+tyche run ./cmd/api                      # generate, then run
+tyche test ./...                         # generate, then test
+
+tyche client                             # regenerate the typed client from spec
 # optional: keep distinct output/body/event types per operation
-servergen client --spec openapi.json --out ./client --module github.com/you/app/client --type-naming operation-scoped
+tyche client --type-naming operation-scoped
 ```
 
-Optional staging excludes go in `.servergenignore`.
+A `tyche.json` at the project root holds the inputs the CLI would otherwise take
+as flags. Discovery walks up from cwd to the first `go.mod`. Flags always
+override file values. Pass `--config <path>` to point at a non-default file or
+`--quiet` to suppress the "using config ..." line. Set `TYCHE_CONFIG` to point
+the CLI at a specific file via the environment.
 
 ## Generated Go client
 
-`servergen client` generates a self-contained, standard-library-only typed Go
+`tyche client` generates a self-contained, standard-library-only typed Go
 client from the OpenAPI spec your server emits — for Go code that *consumes* your
 API (other services, a CLI, a customer SDK). It bakes in tyche's conventions: the
 `{"data": …}` envelope and problem+json errors as a typed `*APIError`.
@@ -428,3 +523,18 @@ How to read this:
   codec is the same no matter what routes the request.
 
 Treat these as regression baselines, not a definitive shootout.
+
+## Developing tyche
+
+For day-to-day contributor workflow, test shapes, and the rules for breaking
+changes, see [CONTRIBUTING.md](CONTRIBUTING.md). The short version:
+
+- Clone, `mise install`, `lefthook install`.
+- `task tests` runs the full suite through a generated worktree (the way CI does
+  it). `go test ./...` runs the same tests directly without the worktree.
+- `go build -o ./bin/tyche ./cmd/tyche` then `./bin/tyche --help` exercises the
+  CLI locally without installing.
+- Lint with `golangci-lint run ./...`; check modernization with
+  `task modernize:check`; fix with `task modernize`.
+- Breaking changes are allowed but must be called out in the PR description
+  and added to the "Unreleased" section at the top of [CHANGELOG.md](CHANGELOG.md).

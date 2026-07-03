@@ -190,12 +190,12 @@ func main() {
 }
 `)
 
-	binPath := filepath.Join(t.TempDir(), "servergen")
-	buildCmd := exec.Command("go", "build", "-o", binPath, "./cmd/servergen")
+	binPath := filepath.Join(t.TempDir(), "tyche")
+	buildCmd := exec.Command("go", "build", "-o", binPath, "./cmd/tyche")
 	buildCmd.Dir = repoRoot
 	buildOutput, err := buildCmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("failed to build servergen binary: %v\n%s", err, string(buildOutput))
+		t.Fatalf("failed to build tyche binary: %v\n%s", err, string(buildOutput))
 	}
 
 	runCmd := exec.Command(binPath, "build", "--root", root, "-o", "./bin/app", "./cmd/app")

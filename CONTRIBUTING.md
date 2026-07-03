@@ -1,0 +1,121 @@
+# Contributing to tyche
+
+This is the contributor workflow for working on tyche itself. For using tyche
+in your own project, see [README.md](README.md).
+
+## First-time setup
+
+```sh
+git clone https://github.com/webdeveloperben/tyche
+cd tyche
+mise install              # installs the Go version pinned in mise.toml
+lefthook install          # pre-commit hook (golangci-lint, modernize, gofmt)
+go build ./...            # confirm everything compiles
+go test ./...             # run the full suite directly (no worktree)
+```
+
+`mise` ([jdx/mise](https://mise.jdx.dev/)) is the toolchain manager. It
+installs the Go version pinned in `mise.toml` and a few other tools used by
+the Taskfile. `lefthook` ([lefthook](https://github.com/evilmartians/lefthook))
+runs the same checks CI runs on every commit.
+
+If you can't use `mise`, install Go 1.25.5 manually and run the lefthook setup
+yourself (or skip the hook and rely on CI).
+
+## Day-to-day commands
+
+The Taskfile is the dev loop. The most common entries:
+
+| Command | What it does |
+| --- | --- |
+| `task tests` | Run the full suite in a generated worktree (matches CI). |
+| `go test ./...` | Run the same tests directly without the worktree. Faster locally. |
+| `go test -race ./...` | Run with the race detector; same as `go-test -race` in CI. |
+| `go build -o ./bin/tyche ./cmd/tyche && ./bin/tyche --help` | Smoke the CLI locally without installing. |
+| `task build` | Regenerate codecs, then `go build` the dev API. |
+| `task dev` | Air hot-reload with codec regeneration. |
+| `task modernize:check` | Report Go modernization opportunities without applying them. |
+| `task modernize` | Apply modernization fixes. |
+| `task benchmark` | Run the benchmark suite. |
+| `task benchmark:comparison` | Cross-framework benchmarks (chi, gin, huma). |
+| `task clean` | Remove `bin/`, `tmp/`. |
+
+## Project layout
+
+```
+.
+├── clientgen/             # Client generator library
+│   ├── cli/               # Cobra command (mounted under `tyche client`)
+│   ├── runtime.go         # String template for the generated runtime
+│   ├── operations.go      # Operation → input struct + method emission
+│   └── typeset.go         # Schema deduplication and Go type derivation
+├── cmd/tyche/             # Single binary entry point
+│   └── main.go            # Wires the root command from servergen/cli
+├── server/                # Runtime library (handlers, binding, validation)
+│   ├── apidocs/           # OpenAPI document + Swagger UI mounting
+│   ├── plugins/           # Middleware (Recoverer, RequestID, Logger, etc.)
+│   ├── servertest/        # Test helpers (build requests, unwrap envelopes)
+│   └── typed.go           # Core typed-handler machinery
+├── servergen/             # Server codec generator library
+│   └── cli/               # Cobra root command (init, generate, client, build, run, test, config)
+└── internal/config/       # tyche.json loader + validator (stdlib only)
+```
+
+## Test shapes
+
+Three flavours of test, each with a different purpose:
+
+- **Unit tests** (`<package>_test.go` next to the code): table-driven where
+  useful. Use `t.TempDir()` for filesystem work, never write to a real path.
+- **Generated-runtime tests** (`clientgen/clientgen_test.go`): write the
+  generated client to `t.TempDir()`, then run `go test` against a real
+  `httptest.Server` to exercise the full runtime.
+- **Integration tests** (`clientgen/integration_test.go`): build a real
+  tyche server, marshal its OpenAPI, generate a client from that exact spec,
+  and confirm the generated module compiles.
+
+The worktree test (`task tests`) copies the project into `tmp/codegen.*`,
+generates codecs there, and runs `go test` against the copy. It's slower than
+`go test ./...` but exercises the same path CI does, so use it before pushing.
+
+## Code style
+
+- `gofmt` is the floor; `golangci-lint` is the ceiling. The lefthook pre-commit
+  runs both.
+- Don't add comments to code. The function/variable name should explain
+  *what*; the *why* lives in commit messages and PR descriptions.
+- Prefer stdlib. The only direct dependencies are `cobra` (CLI) and the
+  test-bench routers (chi, gin, huma). Adding a new dependency needs a
+  paragraph in the PR.
+- Breaking changes are allowed but must be called out in the PR description
+  with the migration path, and added to the "Unreleased" section of
+  [CHANGELOG.md](CHANGELOG.md).
+
+## CLI changes
+
+`cmd/tyche/main.go` is a thin shim that mounts the command tree from
+`servergen/cli`. All subcommand logic, flags, and config handling live there.
+When adding a new subcommand:
+
+1. Add a `newXxxCommand()` function in `servergen/cli/root.go`.
+2. Register it in `NewRootCommand()`.
+3. Add a test in `servergen/cli/` that exercises the happy path and at
+   least one error path.
+4. Update the CLI section of [README.md](README.md) and
+   [cmd/tyche/README.md](cmd/tyche/README.md).
+
+## Generated code
+
+The generators emit code under `// Code generated by tyche ...; DO NOT EDIT.`
+headers. The CLI deletes any file in the output directory with that header on
+regeneration, so anything in a generated file that isn't regenerated every
+run is at risk. If a generated file needs to be hand-edited, it's a bug in
+the generator — fix the generator, not the output.
+
+## Release process
+
+Releases are driven by [release-please](https://github.com/googleapis/release-please)
+on commits to `main`. Conventional commit messages (`feat:`, `fix:`, `feat!:`,
+etc.) become changelog entries automatically. Don't hand-edit
+[CHANGELOG.md](CHANGELOG.md) for the release — release-please will overwrite
+it. Hand-edits are for the "Unreleased" section at the top.

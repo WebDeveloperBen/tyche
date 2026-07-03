@@ -11,32 +11,90 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/webdeveloperben/tyche/clientgen"
+	"github.com/webdeveloperben/tyche/internal/config"
 )
 
-// NewCommand builds the clientgen command under the given use name. Passing
-// "clientgen" yields the standalone binary's root command; passing "client"
-// yields the servergen subcommand. Both share identical flags and behavior.
+// NewCommand builds the clientgen command under the given use name. It is
+// mounted by the tyche binary as the `client` subcommand, and is also
+// reusable as a standalone command for custom tooling.
 func NewCommand(use string) *cobra.Command {
-	var specPath, outDir, module, pkg, goVersion, clientName, typeNaming string
+	var (
+		specPath, outDir, module, pkg, goVersion, clientName, typeNaming string
+		configPath                                                       string
+		quiet                                                            bool
+	)
 
 	cmd := &cobra.Command{
 		Use:   use,
 		Short: "Generate a self-contained typed Go client from a tyche OpenAPI spec",
 		Long: "Reads an OpenAPI JSON document (e.g. the spec your tyche server emits) and\n" +
 			"writes a dependency-free, typed Go client module: its own go.mod, request/\n" +
-			"response types, one method per operation, and typed problem+json errors.",
+			"response types, one method per operation, and typed problem+json errors.\n\n" +
+			"Configuration is read from tyche.json (or tyche.config.json) in the current\n" +
+			"directory or any parent up to the first go.mod. Use --config to point at a\n" +
+			"specific file. Flags always override file values.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			loaded, err := config.Load(config.LoadOptions{
+				ExplicitPath:  configPath,
+				EnvConfigPath: os.Getenv("TYCHE_CONFIG"),
+			})
+			if err != nil {
+				return err
+			}
+			if loaded != nil {
+				if !quiet && loaded.Path != "" {
+					fmt.Fprintf(cmd.ErrOrStderr(), "tyche: using config %s\n", loaded.Path)
+				}
+				if loaded.README != "" && !quiet {
+					for line := range strings.SplitSeq(loaded.README, "\n") {
+						fmt.Fprintf(cmd.ErrOrStderr(), "  %s\n", line)
+					}
+				}
+				if loaded.File != nil {
+					if !cmd.Flags().Changed("spec") && loaded.File.Spec != "" {
+						specPath = loaded.File.Spec
+					}
+					if loaded.File.Client != nil {
+						if !cmd.Flags().Changed("out") && loaded.File.Client.Out != "" {
+							outDir = loaded.File.Client.Out
+						}
+						if !cmd.Flags().Changed("module") && loaded.File.Client.Module != "" {
+							module = loaded.File.Client.Module
+						}
+						if !cmd.Flags().Changed("package") && loaded.File.Client.Package != "" {
+							pkg = loaded.File.Client.Package
+						}
+						if !cmd.Flags().Changed("go") && loaded.File.Client.Go != "" {
+							goVersion = loaded.File.Client.Go
+						}
+						if !cmd.Flags().Changed("client-name") && loaded.File.Client.ClientName != "" {
+							clientName = loaded.File.Client.ClientName
+						}
+						if !cmd.Flags().Changed("type-naming") && loaded.File.Client.TypeNaming != "" {
+							typeNaming = loaded.File.Client.TypeNaming
+						}
+					}
+				}
+			}
 			if specPath == "" {
-				return errors.New("--spec is required")
+				return errors.New("--spec is required (or set spec in tyche.json)")
 			}
 			if outDir == "" {
-				return errors.New("--out is required")
+				return errors.New("--out is required (or set client.out in tyche.json)")
 			}
 			if module == "" {
-				return errors.New("--module is required")
+				return errors.New("--module is required (or set client.module in tyche.json)")
 			}
+
+			// Resolve spec relative to the config file's directory when one
+			// was loaded. This lets "spec": "./api/openapi.json" in tyche.json
+			// resolve correctly even when the CLI is run from elsewhere.
+			if loaded != nil && loaded.Path != "" && !filepath.IsAbs(specPath) {
+				specPath = filepath.Join(filepath.Dir(loaded.Path), specPath)
+			}
+
 			typeNamingStrategy, err := parseTypeNamingStrategy(typeNaming)
 			if err != nil {
 				return err
@@ -90,14 +148,15 @@ func NewCommand(use string) *cobra.Command {
 			return nil
 		},
 	}
-
-	cmd.Flags().StringVar(&specPath, "spec", "", "Path to the OpenAPI JSON document (required)")
-	cmd.Flags().StringVar(&outDir, "out", "", "Output directory for the generated client module (required)")
-	cmd.Flags().StringVar(&module, "module", "", "Go module path for the generated client, e.g. github.com/you/app/client (required)")
+	cmd.Flags().StringVar(&specPath, "spec", "", "Path to the OpenAPI JSON document")
+	cmd.Flags().StringVar(&outDir, "out", "", "Output directory for the generated client module")
+	cmd.Flags().StringVar(&module, "module", "", "Go module path for the generated client, e.g. github.com/you/app/client")
 	cmd.Flags().StringVar(&pkg, "package", "", "Package name for generated files (default: derived from module)")
 	cmd.Flags().StringVar(&goVersion, "go", "", "go directive for the generated go.mod (default: 1.22)")
 	cmd.Flags().StringVar(&clientName, "client-name", "", "Generated client type name (default: Client)")
 	cmd.Flags().StringVar(&typeNaming, "type-naming", "structural", "Generated type naming strategy: structural or operation-scoped")
+	cmd.Flags().StringVar(&configPath, "config", "", "Path to a tyche.json config file (overrides discovery)")
+	cmd.Flags().BoolVar(&quiet, "quiet", false, "Suppress the 'using config ...' info line")
 	return cmd
 }
 

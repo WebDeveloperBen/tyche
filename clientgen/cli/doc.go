@@ -1,6 +1,6 @@
-// Package cli provides the Cobra command for the clientgen CLI.
+// Package cli provides the Cobra command for the client generator.
 //
-// The command is exposed as a builder so it can serve both as the standalone
-// clientgen binary's root command and as the `client` subcommand of servergen,
-// sharing identical flags and generation logic.
+// The command is exposed as a builder so it can serve as the `client`
+// subcommand of the tyche binary, sharing identical flags and generation
+// logic with the underlying clientgen library.
 package cli
