@@ -129,6 +129,45 @@ tasks:
     cmds:
       - go run golang.org/x/tools/go/analysis/passes/modernize/cmd/modernize ./...
 
+  # Each lefthook pre-commit step has a matching task in the `verify` namespace.
+  # Run one when a `task verify` fails to see the full output of that step.
+  # `task verify` runs them all in sequence; leftmost fixers first so the
+  # verification steps read source in its post-format state.
+
+  verify:fmt:
+    desc: Format all Go files with gofumpt (lefthook's gofumpt step)
+    cmds:
+      - gofumpt -w .
+
+  verify:modernize:
+    desc: Apply Go modernization fixes (lefthook's modernize step)
+    cmds:
+      - go run golang.org/x/tools/go/analysis/passes/modernize/cmd/modernize -fix ./...
+
+  verify:build:
+    desc: Compile the whole module (lefthook's verify.build)
+    cmds:
+      - go build ./...
+
+  verify:lint:
+    desc: Run the full linter set (lefthook's verify.lint)
+    cmds:
+      - golangci-lint run ./...
+
+  verify:test:
+    desc: Run the full test suite directly (lefthook's verify.test; for the worktree version, use `task tests`)
+    cmds:
+      - go test ./...
+
+  verify:
+    desc: Run every lefthook pre-commit check in sequence; exit on the first failure
+    cmds:
+      - task: verify:fmt
+      - task: verify:modernize
+      - task: verify:build
+      - task: verify:lint
+      - task: verify:test
+
   benchmark:regen-fixtures:
     desc: Regenerate benchmark fixture codecs
     cmds:

@@ -45,11 +45,11 @@ func NewCommand(use string) *cobra.Command {
 			}
 			if loaded != nil {
 				if !quiet && loaded.Path != "" {
-					fmt.Fprintf(cmd.ErrOrStderr(), "tyche: using config %s\n", loaded.Path)
+					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "tyche: using config %s\n", loaded.Path)
 				}
 				if loaded.README != "" && !quiet {
 					for line := range strings.SplitSeq(loaded.README, "\n") {
-						fmt.Fprintf(cmd.ErrOrStderr(), "  %s\n", line)
+						_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "  %s\n", line)
 					}
 				}
 				if loaded.File != nil {

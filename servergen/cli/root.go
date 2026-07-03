@@ -57,11 +57,11 @@ func loadConfig(ctx *commandCtx, configPath, cwd string) error {
 		return nil
 	}
 	if !ctx.quiet && loaded.Path != "" {
-		fmt.Fprintf(ctx.cmd.ErrOrStderr(), "tyche: using config %s\n", loaded.Path)
+		_, _ = fmt.Fprintf(ctx.cmd.ErrOrStderr(), "tyche: using config %s\n", loaded.Path)
 	}
 	if loaded.README != "" && !ctx.quiet {
 		for line := range strings.SplitSeq(loaded.README, "\n") {
-			fmt.Fprintf(ctx.cmd.ErrOrStderr(), "  %s\n", line)
+			_, _ = fmt.Fprintf(ctx.cmd.ErrOrStderr(), "  %s\n", line)
 		}
 	}
 	return nil
@@ -130,7 +130,7 @@ func runInit(cmd *cobra.Command, root string, f initFlags) error {
 		if !isTerminal(os.Stdin) {
 			return errors.New("non-interactive shell; pass --module, --spec, and --type-naming to scaffold")
 		}
-		fmt.Fprint(cmd.OutOrStdout(), "Client module path (e.g. github.com/acme/api/client): ")
+		_, _ = fmt.Fprint(cmd.OutOrStdout(), "Client module path (e.g. github.com/acme/api/client): ")
 		var raw string
 		if _, err := fmt.Fscan(os.Stdin, &raw); err != nil {
 			return fmt.Errorf("read module: %w", err)
@@ -157,7 +157,7 @@ func runInit(cmd *cobra.Command, root string, f initFlags) error {
 		_ = os.Remove(dest)
 		return fmt.Errorf("scaffolded file failed validation: %w", err)
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "wrote %s\n", dest)
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "wrote %s\n", dest)
 	return nil
 }
 
@@ -213,7 +213,7 @@ func newConfigShowCommand() *cobra.Command {
 
 func runConfigShow(cmd *cobra.Command, ctx *commandCtx, asJSON bool) error {
 	if ctx.loaded == nil {
-		fmt.Fprintln(cmd.OutOrStdout(), "tyche: no config file found")
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "tyche: no config file found")
 		return nil
 	}
 	if asJSON {
@@ -225,37 +225,37 @@ func runConfigShow(cmd *cobra.Command, ctx *commandCtx, asJSON bool) error {
 		if err != nil {
 			return err
 		}
-		fmt.Fprintln(cmd.OutOrStdout(), string(data))
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), string(data))
 		return nil
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "tyche: config %s\n", ctx.loaded.Path)
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "tyche: config %s\n", ctx.loaded.Path)
 	f := ctx.loaded.File
-	fmt.Fprintf(cmd.OutOrStdout(), "  version        = %d                       (file)\n", f.Version)
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  version        = %d                       (file)\n", f.Version)
 	if f.Spec != "" {
-		fmt.Fprintf(cmd.OutOrStdout(), "  spec           = %s        (file)\n", f.Spec)
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  spec           = %s        (file)\n", f.Spec)
 	}
 	if f.Client != nil {
-		fmt.Fprintf(cmd.OutOrStdout(), "  client.out     = %s         (file)\n", f.Client.Out)
-		fmt.Fprintf(cmd.OutOrStdout(), "  client.module  = %s  (file)\n", f.Client.Module)
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  client.out     = %s         (file)\n", f.Client.Out)
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  client.module  = %s  (file)\n", f.Client.Module)
 		if f.Client.Package != "" {
-			fmt.Fprintf(cmd.OutOrStdout(), "  client.package = %s         (file)\n", f.Client.Package)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  client.package = %s         (file)\n", f.Client.Package)
 		}
 		if f.Client.Go != "" {
-			fmt.Fprintf(cmd.OutOrStdout(), "  client.go      = %s                       (file)\n", f.Client.Go)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  client.go      = %s                       (file)\n", f.Client.Go)
 		}
 		if f.Client.ClientName != "" {
-			fmt.Fprintf(cmd.OutOrStdout(), "  client.client_name = %s          (file)\n", f.Client.ClientName)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  client.client_name = %s          (file)\n", f.Client.ClientName)
 		}
 		if f.Client.TypeNaming != "" {
-			fmt.Fprintf(cmd.OutOrStdout(), "  client.type_naming = %s       (file)\n", f.Client.TypeNaming)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  client.type_naming = %s       (file)\n", f.Client.TypeNaming)
 		}
 	}
 	if f.Server != nil {
 		if len(f.Server.Patterns) > 0 {
-			fmt.Fprintf(cmd.OutOrStdout(), "  server.patterns = %v  (file)\n", f.Server.Patterns)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  server.patterns = %v  (file)\n", f.Server.Patterns)
 		}
 		if len(f.Server.Ignore) > 0 {
-			fmt.Fprintf(cmd.OutOrStdout(), "  server.ignore   = %v  (file)\n", f.Server.Ignore)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  server.ignore   = %v  (file)\n", f.Server.Ignore)
 		}
 	}
 	return nil
