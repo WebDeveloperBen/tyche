@@ -24,8 +24,33 @@ jobs:
   release-please:
     runs-on: ubuntu-latest
     steps:
-      - uses: googleapis/release-please-action@v5.0.0
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        id: release
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+
+      # When merging the release PR just created a release (and tag), build the
+      # cross-platform binaries and attach them to that release. All steps below
+      # are gated on release_created so ordinary pushes to main do nothing here.
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        if: ${{ steps.release.outputs.release_created }}
+        with:
+          fetch-depth: 0 # goreleaser needs full history + tags to derive the version
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        if: ${{ steps.release.outputs.release_created }}
+        with:
+          go-version-file: go.mod
+
+      - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        if: ${{ steps.release.outputs.release_created }}
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean
+        env:
+          # GITHUB_TOKEN has contents:write (see permissions above), which is all
+          # goreleaser needs to upload binaries to the existing GitHub release.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

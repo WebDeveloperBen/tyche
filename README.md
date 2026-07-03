@@ -47,6 +47,21 @@ The CLI is a single binary; you do **not** add it to your project's go.mod. The
 libraries (`server`, `server/apidocs`, `server/plugins`, `clientgen`, etc.) are
 regular Go packages you import and version through your go.mod.
 
+**Prefer a prebuilt binary?** Every release ships static binaries for macOS,
+Linux, and Windows (amd64/arm64) on the
+[Releases page](https://github.com/webdeveloperben/tyche/releases) — no Go
+toolchain required. Download the archive for your platform, verify it against
+`checksums.txt`, extract `tyche`, and drop it on your `PATH`:
+
+```sh
+# Example: macOS arm64. Swap in the version + platform you need.
+VER=1.2.3
+curl -fsSLO "https://github.com/webdeveloperben/tyche/releases/download/v${VER}/tyche_${VER}_darwin_arm64.tar.gz"
+tar -xzf "tyche_${VER}_darwin_arm64.tar.gz"
+sudo mv tyche /usr/local/bin/
+tyche version
+```
+
 **Working on tyche itself.** Clone, install the toolchain, run the task suite:
 
 ```sh

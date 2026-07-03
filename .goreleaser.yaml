@@ -1,0 +1,57 @@
+# goreleaser builds and publishes the cross-platform `tyche` CLI binaries.
+#
+# It complements release-please, which owns the version bump, CHANGELOG, git
+# tag, and the GitHub Release (with notes). goreleaser runs right after, in the
+# same workflow, and ATTACHES the compiled binaries to that existing release.
+# `release.mode: keep-existing` means it never touches release-please's notes.
+#
+# Validate locally:      go run github.com/goreleaser/goreleaser/v2@latest check
+# Dry-run a full build:  go run github.com/goreleaser/goreleaser/v2@latest release --snapshot --clean
+version: 2
+
+project_name: tyche
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: tyche
+    main: ./cmd/tyche
+    binary: tyche
+    env:
+      - CGO_ENABLED=0 # pure-Go build; produces static, dependency-free binaries
+    goos: [darwin, linux, windows]
+    goarch: [amd64, arm64]
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/webdeveloperben/tyche/internal/version.Version={{ .Version }}
+      - -X github.com/webdeveloperben/tyche/internal/version.Commit={{ .FullCommit }}
+      - -X github.com/webdeveloperben/tyche/internal/version.Date={{ .Date }}
+      - -X github.com/webdeveloperben/tyche/internal/version.BuiltBy=goreleaser
+
+archives:
+  - id: tyche
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    # Windows users expect a .zip, not a tarball.
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+
+checksum:
+  name_template: checksums.txt
+
+# release-please already generates the changelog; don't duplicate it here.
+changelog:
+  disable: true
+
+release:
+  github:
+    owner: WebDeveloperBen
+    name: tyche
+  # release-please created the release + notes; goreleaser only attaches the
+  # binaries and checksums to it.
+  mode: keep-existing
