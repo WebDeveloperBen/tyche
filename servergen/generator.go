@@ -61,14 +61,18 @@ func generatedTypeKey(t types.Type) string {
 }
 
 type BindFieldSpec struct {
-	FieldName string
-	ParamName string
-	Source    string
-	TypeExpr  string
-	Kind      string
-	Rules     validation.FieldRules
-	Pointer   bool
-	Required  bool
+	FieldName    string
+	ParamName    string
+	Source       string
+	TypeExpr     string
+	Kind         string
+	ElemTypeExpr string
+	ElemKind     string
+	ElemPointer  bool
+	Rules        validation.FieldRules
+	Pointer      bool
+	Required     bool
+	Slice        bool
 }
 
 type InputBindSpec struct {
@@ -417,7 +421,7 @@ func GeneratePackageManifest(pkgPath string, routes []RouteSpec) ([]byte, error)
 				if field.Source == "cookie" {
 					useErrors = true
 				}
-				if field.Kind != "string" {
+				if field.Kind == "bool" || field.Kind == "int" || field.Kind == "uint" || field.Kind == "float" {
 					useFmt = true
 					useStrconv = true
 				}

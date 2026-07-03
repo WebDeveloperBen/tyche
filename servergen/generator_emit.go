@@ -90,6 +90,12 @@ func writeParseBody(buf *bytes.Buffer, route RouteSpec) {
 				buf.WriteString("\t\t\t}\n")
 			}
 			writeBindAssign(buf, "in."+field.FieldName, rawVar, field, pointer)
+		case "form":
+			writeFormFieldParse(buf, field, rawVar, pointer)
+		case "file":
+			writeFileFieldParse(buf, field, rawVar, pointer)
+		case "files":
+			writeFilesFieldParse(buf, field, rawVar, pointer)
 		}
 	}
 	if route.InputBind.Body != nil {
@@ -97,6 +103,98 @@ func writeParseBody(buf *bytes.Buffer, route RouteSpec) {
 	}
 	buf.WriteString("\t\t\tif !validationErr.Empty() { return nil, &validationErr }\n")
 	buf.WriteString("\t\t\treturn &in, nil\n")
+}
+
+func writeFormFieldParse(buf *bytes.Buffer, field BindFieldSpec, rawVar, pointer string) {
+	valuesVar := "values_" + field.FieldName
+	okVar := "ok_" + field.FieldName
+	buf.WriteString("\t\t\t" + valuesVar + ", " + okVar + ", err := serverpkg.ReadMultipartFormValues(req, " + strconv.Quote(field.ParamName) + ")\n")
+	buf.WriteString("\t\t\tif err != nil { return nil, err }\n")
+	buf.WriteString("\t\t\tif !" + okVar + " {\n")
+	if field.Required {
+		buf.WriteString("\t\t\t\tvalidationErr.AddRequired(" + strconv.Quote(pointer) + ")\n")
+	}
+	buf.WriteString("\t\t\t} else {\n")
+	if field.Slice {
+		writeFormSliceAssign(buf, field, valuesVar, pointer, "\t\t\t\t")
+	} else {
+		buf.WriteString("\t\t\t\t" + rawVar + " := " + valuesVar + "[0]\n")
+		writeBindAssign(buf, "in."+field.FieldName, rawVar, field, pointer)
+	}
+	buf.WriteString("\t\t\t}\n")
+}
+
+func writeFormSliceAssign(buf *bytes.Buffer, field BindFieldSpec, valuesVar, pointer, indent string) {
+	target := "in." + field.FieldName
+	elemType := field.ElemTypeExpr
+	if elemType == "" {
+		elemType = field.TypeExpr
+	}
+	switch field.ElemKind {
+	case "string":
+		if field.ElemPointer {
+			buf.WriteString(indent + target + " = make(" + field.TypeExpr + ", 0, len(" + valuesVar + "))\n")
+			buf.WriteString(indent + "for _, raw := range " + valuesVar + " {\n")
+			buf.WriteString(indent + "\ttmp := " + elemType + "(raw)\n")
+			buf.WriteString(indent + "\t" + target + " = append(" + target + ", &tmp)\n")
+			buf.WriteString(indent + "}\n")
+		} else {
+			buf.WriteString(indent + target + " = append(" + target + ", " + valuesVar + "...)\n")
+		}
+	case "bool", "int", "uint", "float":
+		buf.WriteString(indent + target + " = make(" + field.TypeExpr + ", 0, len(" + valuesVar + "))\n")
+		buf.WriteString(indent + "for _, raw := range " + valuesVar + " {\n")
+		writeFormSliceAppendParsed(buf, target, elemType, field.ElemKind, field.ElemPointer, strconv.Quote(pointer), indent+"\t")
+		buf.WriteString(indent + "}\n")
+	}
+	writeRuleValidation(buf, target, strconv.Quote(pointer), field.Kind, field.Rules, indent)
+}
+
+func writeFormSliceAppendParsed(buf *bytes.Buffer, target, elemType, kind string, pointer bool, pointerExpr, indent string) {
+	switch kind {
+	case "bool":
+		buf.WriteString(indent + "parsed, err := strconv.ParseBool(raw)\n")
+	case "int":
+		buf.WriteString(indent + "parsed, err := strconv.ParseInt(raw, 10, 64)\n")
+	case "uint":
+		buf.WriteString(indent + "parsed, err := strconv.ParseUint(raw, 10, 64)\n")
+	case "float":
+		buf.WriteString(indent + "parsed, err := strconv.ParseFloat(raw, 64)\n")
+	}
+	buf.WriteString(indent + "if err != nil { validationErr.AddInvalidType(" + pointerExpr + "); continue }\n")
+	buf.WriteString(indent + "tmp := " + elemType + "(parsed)\n")
+	if pointer {
+		buf.WriteString(indent + target + " = append(" + target + ", &tmp)\n")
+		return
+	}
+	buf.WriteString(indent + target + " = append(" + target + ", tmp)\n")
+}
+
+func writeFileFieldParse(buf *bytes.Buffer, field BindFieldSpec, rawVar, pointer string) {
+	okVar := "ok_" + field.FieldName
+	buf.WriteString("\t\t\t" + rawVar + ", " + okVar + ", err := serverpkg.ReadMultipartFiles(req, " + strconv.Quote(field.ParamName) + ")\n")
+	buf.WriteString("\t\t\tif err != nil { return nil, err }\n")
+	buf.WriteString("\t\t\tif !" + okVar + " {\n")
+	if field.Required {
+		buf.WriteString("\t\t\t\tvalidationErr.AddRequired(" + strconv.Quote(pointer) + ")\n")
+	}
+	buf.WriteString("\t\t\t} else {\n")
+	buf.WriteString("\t\t\t\tin." + field.FieldName + " = " + rawVar + "[0]\n")
+	buf.WriteString("\t\t\t}\n")
+}
+
+func writeFilesFieldParse(buf *bytes.Buffer, field BindFieldSpec, rawVar, pointer string) {
+	okVar := "ok_" + field.FieldName
+	buf.WriteString("\t\t\t" + rawVar + ", " + okVar + ", err := serverpkg.ReadMultipartFiles(req, " + strconv.Quote(field.ParamName) + ")\n")
+	buf.WriteString("\t\t\tif err != nil { return nil, err }\n")
+	buf.WriteString("\t\t\tif !" + okVar + " {\n")
+	if field.Required {
+		buf.WriteString("\t\t\t\tvalidationErr.AddRequired(" + strconv.Quote(pointer) + ")\n")
+	}
+	buf.WriteString("\t\t\t} else {\n")
+	buf.WriteString("\t\t\t\tin." + field.FieldName + " = " + rawVar + "\n")
+	writeRuleValidation(buf, "in."+field.FieldName, strconv.Quote(pointer), field.Kind, field.Rules, "\t\t\t\t")
+	buf.WriteString("\t\t\t}\n")
 }
 
 func writeGeneratedBodyParse(buf *bytes.Buffer, body *BodyBindSpec) {

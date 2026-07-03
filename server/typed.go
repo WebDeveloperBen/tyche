@@ -859,6 +859,12 @@ func setMultipartFilesValue(v reflect.Value, files []*multipart.FileHeader) erro
 }
 
 func ensureMultipartForm(req *http.Request) error {
+	return EnsureMultipartForm(req)
+}
+
+// EnsureMultipartForm parses req as multipart/form-data if it has not already
+// been parsed. It is used by reflection and generated request binders.
+func EnsureMultipartForm(req *http.Request) error {
 	if req.MultipartForm != nil {
 		return nil
 	}
@@ -882,7 +888,27 @@ func ensureMultipartForm(req *http.Request) error {
 }
 
 func readMultipartFiles(req *http.Request, name string) ([]*multipart.FileHeader, bool, error) {
-	if err := ensureMultipartForm(req); err != nil {
+	return ReadMultipartFiles(req, name)
+}
+
+// ReadMultipartFormValues reads all values for a multipart form field.
+func ReadMultipartFormValues(req *http.Request, name string) ([]string, bool, error) {
+	if err := EnsureMultipartForm(req); err != nil {
+		return nil, false, err
+	}
+	if req.MultipartForm == nil {
+		return nil, false, nil
+	}
+	values := req.MultipartForm.Value[name]
+	if len(values) == 0 {
+		return nil, false, nil
+	}
+	return values, true, nil
+}
+
+// ReadMultipartFiles reads all uploaded files for a multipart file field.
+func ReadMultipartFiles(req *http.Request, name string) ([]*multipart.FileHeader, bool, error) {
+	if err := EnsureMultipartForm(req); err != nil {
 		return nil, false, err
 	}
 	if req.MultipartForm == nil {

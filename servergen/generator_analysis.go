@@ -36,8 +36,6 @@ func analyseInputType(t types.Type) InputBindSpec {
 		}
 		tag := reflect.StructTag(strct.Tag(i))
 		switch {
-		case tag.Get("form") != "" || tag.Get("file") != "" || tag.Get("files") != "":
-			return InputBindSpec{}
 		case tag.Get("body") != "" || field.Name() == "Body":
 			bodySpec, ok := analyseBodyStruct(field.Type(), "in."+field.Name()+".", fieldRequiredForJSONTag(tag, field.Type()))
 			if !ok {
@@ -64,21 +62,60 @@ func analyseInputType(t types.Type) InputBindSpec {
 			continue
 		}
 
-		typeExpr, kind, pointer, ok := supportedScalar(field.Type())
-		if !ok {
-			return InputBindSpec{}
-		}
-
-		spec.Fields = append(spec.Fields, BindFieldSpec{
+		fieldSpec := BindFieldSpec{
 			FieldName: field.Name(),
 			ParamName: name,
 			Source:    source,
-			TypeExpr:  typeExpr,
-			Kind:      kind,
-			Pointer:   pointer,
 			Required:  requiredForTag(tag, source, field.Type()),
 			Rules:     mustParseRules(tag),
-		})
+		}
+		switch source {
+		case "file":
+			if !isMultipartFileHeader(field.Type()) {
+				return InputBindSpec{}
+			}
+			fieldSpec.Kind = "file"
+		case "files":
+			if !isMultipartFileHeaderSlice(field.Type()) {
+				return InputBindSpec{}
+			}
+			fieldSpec.Kind = "files"
+			fieldSpec.Slice = true
+		case "form":
+			if elem, ok := sliceElementType(field.Type()); ok {
+				if len(fieldSpec.Rules.ItemRules) > 0 {
+					return InputBindSpec{}
+				}
+				elemTypeExpr, elemKind, elemPtr, ok := supportedScalar(elem)
+				if !ok {
+					return InputBindSpec{}
+				}
+				fieldSpec.TypeExpr = types.TypeString(field.Type(), nil)
+				fieldSpec.Kind = elemKind
+				fieldSpec.ElemTypeExpr = elemTypeExpr
+				fieldSpec.ElemKind = elemKind
+				fieldSpec.ElemPointer = elemPtr
+				fieldSpec.Slice = true
+			} else {
+				typeExpr, kind, pointer, ok := supportedScalar(field.Type())
+				if !ok {
+					return InputBindSpec{}
+				}
+				fieldSpec.TypeExpr = typeExpr
+				fieldSpec.Kind = kind
+				fieldSpec.Pointer = pointer
+			}
+		default:
+			typeExpr, kind, pointer, ok := supportedScalar(field.Type())
+			if !ok {
+				return InputBindSpec{}
+			}
+			fieldSpec.TypeExpr = typeExpr
+			fieldSpec.Kind = kind
+			fieldSpec.Pointer = pointer
+		}
+
+		spec.Fields = append(spec.Fields, fieldSpec)
 	}
 
 	return spec
@@ -353,9 +390,33 @@ func fieldSource(tag reflect.StructTag) (string, string) {
 		return "header", tagName(tag.Get("header"))
 	case tag.Get("cookie") != "":
 		return "cookie", tagName(tag.Get("cookie"))
+	case tag.Get("form") != "":
+		return "form", tagName(tag.Get("form"))
+	case tag.Get("file") != "":
+		return "file", tagName(tag.Get("file"))
+	case tag.Get("files") != "":
+		return "files", tagName(tag.Get("files"))
 	default:
 		return "", ""
 	}
+}
+
+func isMultipartFileHeader(t types.Type) bool {
+	ptr, ok := t.(*types.Pointer)
+	if !ok {
+		return false
+	}
+	named, ok := ptr.Elem().(*types.Named)
+	if !ok {
+		return false
+	}
+	obj := named.Obj()
+	return obj.Name() == "FileHeader" && obj.Pkg() != nil && obj.Pkg().Path() == "mime/multipart"
+}
+
+func isMultipartFileHeaderSlice(t types.Type) bool {
+	slice, ok := t.Underlying().(*types.Slice)
+	return ok && isMultipartFileHeader(slice.Elem())
 }
 
 func supportedScalar(t types.Type) (typeExpr, kind string, pointer bool, ok bool) {
@@ -404,6 +465,9 @@ func requiredForTag(tag reflect.StructTag, source string, t types.Type) bool {
 	parts := strings.Split(raw, ",")
 	if slices.Contains(parts[1:], "omitempty") {
 		return false
+	}
+	if source == "file" && isMultipartFileHeader(t) {
+		return true
 	}
 	_, isPtr := t.(*types.Pointer)
 	return !isPtr

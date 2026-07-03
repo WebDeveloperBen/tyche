@@ -2,6 +2,7 @@ package servergen_test
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -106,8 +107,11 @@ func TestLoadRoutes(t *testing.T) {
 	if uploadRoute.OperationID != "upload-thing" {
 		t.Fatalf("expected upload-thing route, got %#v", routes)
 	}
-	if uploadRoute.InputBind.Manual {
-		t.Fatalf("expected multipart route input binding to require runtime fallback, got %#v", uploadRoute.InputBind)
+	if !uploadRoute.InputBind.Manual {
+		t.Fatalf("expected multipart route input binding to be generated, got %#v", uploadRoute.InputBind)
+	}
+	if len(uploadRoute.InputBind.Fields) != 2 {
+		t.Fatalf("expected two multipart bind fields, got %#v", uploadRoute.InputBind.Fields)
 	}
 }
 
@@ -207,6 +211,8 @@ func TestGeneratePackageManifest(t *testing.T) {
 		`OperationID: "flat-thing"`,
 		`OperationID: "upload-thing"`,
 		`HasGeneratedCodec: false`,
+		`serverpkg.ReadMultipartFormValues(req, "title")`,
+		`serverpkg.ReadMultipartFiles(req, "file")`,
 		// Success responses must be wrapped in the {"data": …} envelope that
 		// the OpenAPI spec, servertest.DecodeData, and the generated client all
 		// expect. The hand-built body path opens the envelope directly...
@@ -232,9 +238,117 @@ func TestGeneratePackageManifest(t *testing.T) {
 		OperationID: "unsupported-thing"`) {
 		t.Fatalf("expected unsupported route to skip generated codec registration\n%s", text)
 	}
-	if strings.Contains(text, `RegisterGeneratedCodec(serverpkg.GeneratedRouteMeta{
-		PackagePath: "github.com/webdeveloperben/tyche/servergen/testdata/samplepkg",
-		OperationID: "upload-thing"`) {
-		t.Fatalf("expected multipart route to skip generated codec registration\n%s", text)
+}
+
+func TestGeneratedSamplePackageCompilesAndRunsMultipartRoute(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping generated package compile/runtime test in short mode")
+	}
+
+	routes, err := servergen.LoadRoutes([]string{"./testdata/samplepkg"})
+	if err != nil {
+		t.Fatalf("LoadRoutes failed: %v", err)
+	}
+	content, err := servergen.GeneratePackageManifest(routes[0].PackagePath, routes)
+	if err != nil {
+		t.Fatalf("GeneratePackageManifest failed: %v", err)
+	}
+
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	repoRoot := filepath.Dir(wd)
+	srcDir := filepath.Join(wd, "testdata", "samplepkg")
+	dstDir := t.TempDir()
+
+	entries, err := os.ReadDir(srcDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") {
+			continue
+		}
+		src := filepath.Join(srcDir, entry.Name())
+		data, err := os.ReadFile(src)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dstDir, entry.Name()), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dstDir, servergen.GeneratedFilename), content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	goMod := "module example.com/generated/samplepkg\n\n" +
+		"go 1.26\n\n" +
+		"require github.com/webdeveloperben/tyche v0.0.0\n\n" +
+		"replace github.com/webdeveloperben/tyche => " + filepath.ToSlash(repoRoot) + "\n"
+	if err := os.WriteFile(filepath.Join(dstDir, "go.mod"), []byte(goMod), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dstDir, "multipart_generated_test.go"), []byte(generatedMultipartHarness), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := exec.Command("go", "test", "./...")
+	cmd.Dir = dstDir
+	cmd.Env = append(os.Environ(), "GOWORK=off", "GOCACHE="+filepath.Join(dstDir, ".gocache"))
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("generated sample package failed: %v\n%s", err, out)
 	}
 }
+
+const generatedMultipartHarness = `package samplepkg
+
+import (
+	"bytes"
+	"context"
+	"mime/multipart"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/webdeveloperben/tyche/server"
+)
+
+type testStore struct{}
+
+func (testStore) Get(context.Context, string) (string, error) { return "ok", nil }
+
+func TestGeneratedMultipartRoute(t *testing.T) {
+	api := server.NewAPI(server.NewServeMuxAdapter())
+	RegisterRoutes(api.Group(""), testStore{})
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	if err := writer.WriteField("title", "upload"); err != nil {
+		t.Fatal(err)
+	}
+	part, err := writer.CreateFormFile("file", "thing.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := part.Write([]byte("thing")); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/things/upload", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	rec := httptest.NewRecorder()
+	api.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "\"ok\":true") {
+		t.Fatalf("expected generated multipart route to return ok=true, got %s", rec.Body.String())
+	}
+}
+`

@@ -163,9 +163,9 @@ automatically; when present it replaces the reflection path for that route. Both
 paths produce byte-identical responses, so codegen is a pure performance
 optimization you reach for in production, not a prerequisite.
 
-Multipart routes currently use the reflection request binder even when
-`servergen` is run; servergen marks those routes as runtime-fallback until
-generated multipart codecs are implemented.
+Multipart routes are supported by both the reflection binder and generated
+server codecs. Generated multipart codecs use the same form/file semantics as
+the runtime binder.
 
 Successful responses are wrapped in a `{"data": …}` envelope; errors are RFC
 9457 `application/problem+json`.
