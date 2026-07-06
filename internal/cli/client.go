@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/webdeveloperben/tyche/internal/app"
@@ -22,7 +23,7 @@ type ClientCmd struct {
 func (c *ClientCmd) Run(g *GlobalFlags) error {
 	p := g.printer()
 	loaded, err := app.LoadConfig(g.loadOptions(p))
-	if err != nil {
+	if err != nil && !errors.Is(err, app.ErrNoConfig) {
 		return Exit(1, err)
 	}
 

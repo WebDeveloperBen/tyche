@@ -1,6 +1,7 @@
 package server_test
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -93,7 +94,8 @@ func TestMiddleware_ErrorInHandler(t *testing.T) {
 		return func(w http.ResponseWriter, r *http.Request) error {
 			err := next(w, r)
 			if err != nil {
-				if httpErr, ok := err.(server.HTTPError); ok {
+				var httpErr server.HTTPError
+				if errors.As(err, &httpErr) {
 					http.Error(w, httpErr.Message, httpErr.StatusCode)
 				}
 			}

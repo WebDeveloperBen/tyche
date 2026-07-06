@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/webdeveloperben/tyche/internal/app"
@@ -30,7 +31,7 @@ func (c *ConfigShowCmd) Run(g *GlobalFlags) error {
 	p := g.printerFor(format)
 
 	result, err := app.ShowConfig(g.loadOptions(p))
-	if err != nil {
+	if err != nil && !errors.Is(err, app.ErrNoConfig) {
 		return Exit(1, err)
 	}
 

@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -22,7 +23,7 @@ func TestScaffold_WritesConfigAndRoundTrips(t *testing.T) {
 	if got != filepath.Join(dir, "tyche.json") {
 		t.Fatalf("Scaffold returned %q, want %q", got, filepath.Join(dir, "tyche.json"))
 	}
-	body, err := os.ReadFile(got)
+	body, err := os.ReadFile(got) //nolint:gosec
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +42,7 @@ func TestScaffold_AppliesDefaults(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Scaffold: %v", err)
 	}
-	body, _ := os.ReadFile(filepath.Join(dir, "tyche.json"))
+	body, _ := os.ReadFile(filepath.Join(dir, "tyche.json")) //nolint:gosec
 	if !contains(body, `"./api/openapi.json"`) {
 		t.Errorf("expected default spec path, got:\n%s", body)
 	}
@@ -53,7 +54,7 @@ func TestScaffold_AppliesDefaults(t *testing.T) {
 func TestScaffold_RefusesOverwrite(t *testing.T) {
 	dir := t.TempDir()
 	dest := filepath.Join(dir, "tyche.json")
-	if err := os.WriteFile(dest, []byte(`{"version":1}`), 0o644); err != nil {
+	if err := os.WriteFile(dest, []byte(`{"version":1}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Scaffold(ScaffoldOptions{Root: dir, Module: "github.com/acme/api/client"}); err == nil {
@@ -64,7 +65,7 @@ func TestScaffold_RefusesOverwrite(t *testing.T) {
 func TestScaffold_ForceOverwrite(t *testing.T) {
 	dir := t.TempDir()
 	dest := filepath.Join(dir, "tyche.json")
-	if err := os.WriteFile(dest, []byte(`{"version":1}`), 0o644); err != nil {
+	if err := os.WriteFile(dest, []byte(`{"version":1}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Scaffold(ScaffoldOptions{
@@ -74,7 +75,7 @@ func TestScaffold_ForceOverwrite(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Scaffold with force: %v", err)
 	}
-	body, _ := os.ReadFile(dest)
+	body, _ := os.ReadFile(dest) //nolint:gosec
 	if !contains(body, "github.com/acme/api/client") {
 		t.Errorf("overwritten file missing module: %s", body)
 	}
@@ -106,7 +107,7 @@ func TestLoadConfig_ExplicitPath(t *testing.T) {
 	dir := t.TempDir()
 	cfg := `{"version": 1, "client": {"out": "./client", "module": "github.com/acme/api/client"}}`
 	cfgPath := filepath.Join(dir, "tyche.json")
-	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
+	if err := os.WriteFile(cfgPath, []byte(cfg), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	res, err := LoadConfig(LoadOptions{Root: dir, ConfigPath: cfgPath})
@@ -124,10 +125,10 @@ func TestLoadConfig_ExplicitPath(t *testing.T) {
 func TestLoadConfig_DiscoveryFromCwd(t *testing.T) {
 	dir := t.TempDir()
 	cfg := `{"version": 1, "client": {"out": "./client", "module": "github.com/acme/api/client"}}`
-	if err := os.WriteFile(filepath.Join(dir, "tyche.json"), []byte(cfg), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "tyche.json"), []byte(cfg), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/foo\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/foo\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	res, err := LoadConfig(LoadOptions{Root: dir})
@@ -141,19 +142,16 @@ func TestLoadConfig_DiscoveryFromCwd(t *testing.T) {
 
 func TestLoadConfig_NoConfig(t *testing.T) {
 	dir := t.TempDir()
-	res, err := LoadConfig(LoadOptions{Root: dir})
-	if err != nil {
-		t.Fatalf("LoadConfig: %v", err)
-	}
-	if res != nil {
-		t.Fatalf("expected nil result for missing config, got %+v", res)
+	_, err := LoadConfig(LoadOptions{Root: dir})
+	if !errors.Is(err, ErrNoConfig) {
+		t.Fatalf("expected ErrNoConfig for missing config, got %v", err)
 	}
 }
 
 func TestShowConfig_ResolvesFields(t *testing.T) {
 	dir := t.TempDir()
 	cfg := `{"version": 1, "spec": "./api/openapi.json", "client": {"out": "./client", "module": "github.com/acme/api/client", "type_naming": "structural"}, "server": {"patterns": ["./..."]}}`
-	if err := os.WriteFile(filepath.Join(dir, "tyche.json"), []byte(cfg), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "tyche.json"), []byte(cfg), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	res, err := ShowConfig(LoadOptions{Root: dir})
@@ -186,12 +184,9 @@ func TestShowConfig_ResolvesFields(t *testing.T) {
 
 func TestShowConfig_NoConfig(t *testing.T) {
 	dir := t.TempDir()
-	res, err := ShowConfig(LoadOptions{Root: dir})
-	if err != nil {
-		t.Fatalf("ShowConfig: %v", err)
-	}
-	if res != nil {
-		t.Fatalf("expected nil for missing config, got %+v", res)
+	_, err := ShowConfig(LoadOptions{Root: dir})
+	if !errors.Is(err, ErrNoConfig) {
+		t.Fatalf("expected ErrNoConfig for missing config, got %v", err)
 	}
 }
 

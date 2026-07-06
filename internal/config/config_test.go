@@ -10,10 +10,10 @@ import (
 
 func writeFile(t *testing.T, path, content string) {
 	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -209,7 +209,7 @@ func TestLoad_DiscoveryWalksUp(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "tyche.json"), `{"version": 1, "client": {"module": "github.com/x/y"}}`)
 	sub := filepath.Join(root, "a", "b", "c")
-	if err := os.MkdirAll(sub, 0o755); err != nil {
+	if err := os.MkdirAll(sub, 0o750); err != nil {
 		t.Fatal(err)
 	}
 
@@ -232,18 +232,15 @@ func TestLoad_StopsAtGoMod(t *testing.T) {
 	//   workspace/tyche.json          (must not be discovered)
 	parent := t.TempDir()
 	project := filepath.Join(parent, "project")
-	if err := os.MkdirAll(project, 0o755); err != nil {
+	if err := os.MkdirAll(project, 0o750); err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, filepath.Join(parent, "tyche.json"), `{"version": 1, "client": {"module": "github.com/x/y"}}`)
 	writeFile(t, filepath.Join(project, "go.mod"), "module example.com/foo\n")
 
-	res, err := Load(LoadOptions{CWD: project})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res != nil && res.File != nil {
-		t.Errorf("expected no file beyond go.mod boundary, got %+v", res)
+	_, err := Load(LoadOptions{CWD: project})
+	if !errors.Is(err, ErrNoConfig) {
+		t.Fatalf("expected ErrNoConfig beyond go.mod boundary, got %v", err)
 	}
 }
 
@@ -262,12 +259,9 @@ func TestLoad_NoFile_NoError(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "go.mod"), "module example.com/foo\n")
 
-	res, err := Load(LoadOptions{CWD: dir})
-	if err != nil {
-		t.Fatalf("expected nil error when no config exists, got %v", err)
-	}
-	if res != nil && res.File != nil {
-		t.Fatalf("expected nil file, got %+v", res)
+	_, err := Load(LoadOptions{CWD: dir})
+	if !errors.Is(err, ErrNoConfig) {
+		t.Fatalf("expected ErrNoConfig when no config exists, got %v", err)
 	}
 }
 
@@ -390,7 +384,7 @@ func TestOffsetToLineCol(t *testing.T) {
 func TestWrapSyntaxError_OtherErrorUnchanged(t *testing.T) {
 	other := errors.New("nope")
 	got := wrapSyntaxError([]byte("{}"), other)
-	if got != other {
+	if !errors.Is(got, other) {
 		t.Errorf("expected unchanged error, got %v", got)
 	}
 }

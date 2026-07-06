@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"errors"
+
 	"github.com/webdeveloperben/tyche/internal/app"
 )
 
@@ -17,7 +19,7 @@ func (c *GenerateCmd) Run(g *GlobalFlags) error {
 	// config ..." banner. We reuse the loaded server block below so
 	// `generate` applies the configured patterns, matching build/run/test.
 	loaded, err := app.LoadConfig(g.loadOptions(p))
-	if err != nil {
+	if err != nil && !errors.Is(err, app.ErrNoConfig) {
 		return Exit(1, err)
 	}
 

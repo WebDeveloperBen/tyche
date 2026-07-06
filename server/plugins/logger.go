@@ -113,7 +113,7 @@ func (m *loggerMiddleware) Middleware() server.Middleware {
 			if m.config.LogFunc != nil {
 				m.config.LogFunc(r.Method, r.URL.Path, query, sr.status, duration, err)
 			} else {
-				log.Printf("[%s] %s %s %s %d %v", duration.String(), r.Method, r.URL.Path, query, sr.status, err)
+				log.Printf("[%s] %s %s %s %d %v", duration.String(), r.Method, r.URL.Path, query, sr.status, err) //nolint:gosec
 			}
 
 			return err

@@ -260,7 +260,8 @@ func handleHTTPError(w http.ResponseWriter, err error) {
 		writeValidationProblemJSON(w, http.StatusBadRequest, validationErr)
 		return
 	}
-	if httpErr, ok := err.(HTTPError); ok {
+	var httpErr HTTPError
+	if errors.As(err, &httpErr) {
 		if httpErr.Silent {
 			slog.Debug(
 				"server: silent HTTP error suppressed",
@@ -278,11 +279,6 @@ func handleHTTPError(w http.ResponseWriter, err error) {
 			message = http.StatusText(httpErr.StatusCode)
 		}
 		writeErrorJSON(w, httpErr.StatusCode, message)
-		return
-	}
-	var httpErr HTTPError
-	if errors.As(err, &httpErr) {
-		handleHTTPError(w, httpErr)
 		return
 	}
 	if written {

@@ -1,6 +1,7 @@
 package server_test
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -80,7 +81,7 @@ func TestCookies(t *testing.T) {
 		})
 
 		req := httptest.NewRequest(http.MethodGet, "/get", nil)
-		req.AddCookie(&http.Cookie{Name: "session", Value: "user123"})
+		req.AddCookie(&http.Cookie{Name: "session", Value: "user123"}) //nolint:gosec
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, req)
 
@@ -93,7 +94,7 @@ func TestCookies(t *testing.T) {
 		r := server.NewAPI(server.NewServeMuxAdapter())
 		r.GET("/get", func(w http.ResponseWriter, r *http.Request) error {
 			_, err := server.GetCookie(r, "nonexistent")
-			if err != http.ErrNoCookie {
+			if !errors.Is(err, http.ErrNoCookie) {
 				t.Errorf("expected http.ErrNoCookie, got %v", err)
 			}
 			return nil

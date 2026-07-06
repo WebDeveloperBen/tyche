@@ -399,10 +399,12 @@ func TestCompressor(t *testing.T) {
 		w := newStrictHeaderRecorder()
 		r.ServeHTTP(w, req)
 
-		if got := w.Result().Header.Get("Content-Encoding"); got != "" {
+		res := w.Result()
+		defer func() { _ = res.Body.Close() }()
+		if got := res.Header.Get("Content-Encoding"); got != "" {
 			t.Fatalf("expected identity fallback on live server, got %s", got)
 		}
-		if got := w.Result().Header.Get("Content-Length"); got != strconv.Itoa(len(body)) {
+		if got := res.Header.Get("Content-Length"); got != strconv.Itoa(len(body)) {
 			t.Fatalf("expected Content-Length %d, got %s", len(body), got)
 		}
 		if w.Body.String() != body {
@@ -437,10 +439,12 @@ func TestCompressor(t *testing.T) {
 		w := newStrictHeaderRecorder()
 		r.ServeHTTP(w, req)
 
-		if got := w.Result().Header.Get("Content-Encoding"); got != "" {
+		res := w.Result()
+		defer func() { _ = res.Body.Close() }()
+		if got := res.Header.Get("Content-Encoding"); got != "" {
 			t.Fatalf("expected identity passthrough, got %s", got)
 		}
-		if got := w.Result().Header.Get("Content-Length"); got != "" {
+		if got := res.Header.Get("Content-Length"); got != "" {
 			t.Fatalf("expected no Content-Length after passthrough switch, got %s", got)
 		}
 		if w.Body.String() != expected {
@@ -491,7 +495,9 @@ func TestCompressor(t *testing.T) {
 		if w.Body.Len() != 0 {
 			t.Fatalf("expected no body for HEAD, got %q", w.Body.String())
 		}
-		if got := w.Result().Header.Get("Content-Encoding"); got != "" {
+		res := w.Result()
+		defer func() { _ = res.Body.Close() }()
+		if got := res.Header.Get("Content-Encoding"); got != "" {
 			t.Fatalf("expected identity headers on HEAD overflow, got %s", got)
 		}
 	})

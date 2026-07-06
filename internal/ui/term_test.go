@@ -25,10 +25,10 @@ func TestIsTerminal_FileInfoCheck(t *testing.T) {
 func TestIsTerminal_RegularFile(t *testing.T) {
 	// A regular file (e.g. a temp file) is not a character device.
 	f := t.TempDir() + "/file"
-	if err := os.WriteFile(f, []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(f, []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	fh, err := os.Open(f)
+	fh, err := os.Open(f) //nolint:gosec
 	if err != nil {
 		t.Fatal(err)
 	}

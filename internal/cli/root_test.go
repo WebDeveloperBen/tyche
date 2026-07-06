@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -106,7 +107,8 @@ func TestExitError_Wraps(t *testing.T) {
 	if !strings.Contains(got.Error(), "boom") {
 		t.Errorf("Exit error text %q does not contain inner message", got.Error())
 	}
-	if exitErr, ok := got.(*ExitError); !ok || exitErr.Code != 7 {
+	var exitErr *ExitError
+	if !errors.As(got, &exitErr) || exitErr.Code != 7 {
 		t.Errorf("Exit(7, err) lost code: got %T, %v", got, got)
 	}
 }

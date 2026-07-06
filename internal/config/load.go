@@ -20,8 +20,14 @@ type LoadOptions struct {
 	EnvConfigPath string
 }
 
-// LoadResult is the outcome of Load. When File is nil and Err is nil, no
-// tyche.json was found and the caller should fall back to flag-only mode.
+// ErrNoConfig is returned by Load when no tyche.json (or tyche.config.json)
+// is found via the configured discovery path. It is a sentinel so callers
+// can distinguish "no config, fall back to flags" from a real load failure
+// using errors.Is / errors.As.
+var ErrNoConfig = errors.New("tyche: no config file found")
+
+// LoadResult is the outcome of Load. When Err is ErrNoConfig, no tyche.json
+// was found and the caller should fall back to flag-only mode.
 type LoadResult struct {
 	// File is the parsed config, or nil when no file was found.
 	File *File
@@ -34,14 +40,12 @@ type LoadResult struct {
 
 // Load reads tyche.json using the precedence: ExplicitPath > EnvConfigPath
 // > discovery. The returned File is always validated; invalid configurations
-// surface as an error before the caller can act on them.
+// surface as an error before the caller can act on them. When no file is
+// discovered, Load returns (nil, ErrNoConfig).
 func Load(opts LoadOptions) (*LoadResult, error) {
 	res, err := loadUnvalidated(opts)
 	if err != nil {
 		return nil, err
-	}
-	if res == nil {
-		return nil, nil
 	}
 	if err := res.File.Validate(); err != nil {
 		return nil, fmt.Errorf("%s: %w", res.Path, err)
@@ -67,7 +71,7 @@ func loadFile(path string) (*LoadResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("config: resolve path %q: %w", path, err)
 	}
-	data, err := os.ReadFile(abs)
+	data, err := os.ReadFile(abs) //nolint:gosec
 	if err != nil {
 		return nil, fmt.Errorf("config: read %q: %w", abs, err)
 	}
@@ -117,7 +121,8 @@ func offsetToLineCol(data []byte, offset int64) (int, int) {
 
 // discover walks up from cwd looking for tyche.json or tyche.config.json,
 // stopping at the first directory that contains a go.mod. Returns
-// (nil, nil) when nothing is found so the caller can fall back to flags.
+// (nil, ErrNoConfig) when nothing is found so the caller can fall back to
+// flags.
 func discover(cwd string) (*LoadResult, error) {
 	if cwd == "" {
 		var err error
@@ -146,12 +151,12 @@ func discover(cwd string) (*LoadResult, error) {
 		}
 		// Workspace boundary: stop walking at the first go.mod.
 		if hasGoMod(dir) {
-			return nil, nil
+			return nil, ErrNoConfig
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
 			// Hit the filesystem root.
-			return nil, nil
+			return nil, ErrNoConfig
 		}
 		dir = parent
 	}

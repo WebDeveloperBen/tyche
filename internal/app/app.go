@@ -40,11 +40,17 @@ type LoadOptions struct {
 	PrintInfo    bool // whether to emit the "using config ..." banner
 }
 
+// ErrNoConfig is re-exported from the config package so CLI handlers can
+// distinguish "no config file found" from real load failures without
+// importing internal/config directly.
+var ErrNoConfig = config.ErrNoConfig
+
 // LoadConfig loads the tyche.json file using the same precedence as the CLI:
 // explicit path > env var > discovery. The optional InfoCallback receives
 // informational messages ("using config ...", "  <README line>") so the CLI
 // layer can route them through its Printer. If no callback is set, the
-// messages are dropped — useful for tests and quiet mode.
+// messages are dropped — useful for tests and quiet mode. When no config is
+// discovered, LoadConfig returns (nil, config.ErrNoConfig).
 func LoadConfig(opts LoadOptions) (*config.LoadResult, error) {
 	if opts.InfoCallback == nil {
 		opts.InfoCallback = func(string) {}
@@ -56,9 +62,6 @@ func LoadConfig(opts LoadOptions) (*config.LoadResult, error) {
 	})
 	if err != nil {
 		return nil, err
-	}
-	if loaded == nil {
-		return nil, nil
 	}
 	if opts.PrintInfo && loaded.Path != "" {
 		opts.InfoCallback(fmt.Sprintf("using config %s", loaded.Path))
@@ -121,7 +124,7 @@ func Scaffold(opts ScaffoldOptions) (string, error) {
 	}
 
 	content := renderScaffold(opts)
-	if err := os.WriteFile(dest, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(dest, []byte(content), 0o600); err != nil {
 		return "", fmt.Errorf("write %s: %w", dest, err)
 	}
 
@@ -129,7 +132,10 @@ func Scaffold(opts ScaffoldOptions) (string, error) {
 	// immediately, before the user hits them on the next CLI run.
 	if _, err := config.Load(config.LoadOptions{ExplicitPath: dest}); err != nil {
 		if rmErr := os.Remove(dest); rmErr != nil {
-			return "", fmt.Errorf("scaffolded file failed validation: %w (and could not remove the malformed %s: %v)", err, dest, rmErr)
+			return "", errors.Join(
+				fmt.Errorf("scaffolded file failed validation: %w", err),
+				fmt.Errorf("could not remove the malformed %s: %w", dest, rmErr),
+			)
 		}
 		return "", fmt.Errorf("scaffolded file failed validation: %w", err)
 	}
@@ -185,15 +191,12 @@ type ConfigServer struct {
 }
 
 // ShowConfig resolves tyche.json and returns a printable representation.
-// Returns (nil, nil) when no config file was found — the CLI decides how
-// to phrase that to the user.
+// Returns (nil, config.ErrNoConfig) when no config file was found — the CLI
+// decides how to phrase that to the user.
 func ShowConfig(opts LoadOptions) (*ConfigShowResult, error) {
 	loaded, err := LoadConfig(opts)
 	if err != nil {
 		return nil, err
-	}
-	if loaded == nil {
-		return nil, nil
 	}
 	f := loaded.File
 	out := &ConfigShowResult{Path: loaded.Path, Version: f.Version}
@@ -265,7 +268,7 @@ func WithWorktree(opts WorktreeOptions) error {
 	}
 
 	tmpRoot := filepath.Join(opts.Root, "tmp")
-	if err := os.MkdirAll(tmpRoot, 0o755); err != nil {
+	if err := os.MkdirAll(tmpRoot, 0o750); err != nil {
 		return err
 	}
 	tmpDir, err := os.MkdirTemp(tmpRoot, "codegen.")
@@ -352,7 +355,7 @@ func copyProjectTree(rootDir, dstDir string, ignore func(string, string) bool) e
 			if shouldSkipDir(relPath, base) || ignore(relPath, base) {
 				return filepath.SkipDir
 			}
-			return os.MkdirAll(filepath.Join(dstDir, relPath), 0o755)
+			return os.MkdirAll(filepath.Join(dstDir, relPath), 0o750)
 		}
 		if shouldSkipFile(base) || ignore(relPath, base) {
 			return nil
@@ -381,17 +384,17 @@ func shouldSkipFile(base string) bool {
 }
 
 func copyFile(srcPath, dstPath string, mode os.FileMode) error {
-	src, err := os.Open(srcPath)
+	src, err := os.Open(srcPath) //nolint:gosec
 	if err != nil {
 		return err
 	}
 	defer func() { _ = src.Close() }()
 
-	if err := os.MkdirAll(filepath.Dir(dstPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(dstPath), 0o750); err != nil {
 		return err
 	}
 
-	dst, err := os.OpenFile(dstPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
+	dst, err := os.OpenFile(dstPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode) //nolint:gosec
 	if err != nil {
 		return err
 	}
@@ -409,7 +412,7 @@ func runGo(dir string, args ...string) error {
 	if _, err := exec.LookPath("go"); err != nil {
 		return errors.New("`go` executable not found in PATH; install Go 1.22+ to use this command")
 	}
-	cmd := exec.CommandContext(context.Background(), "go", args...)
+	cmd := exec.CommandContext(context.Background(), "go", args...) //nolint:gosec
 	cmd.Dir = dir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -482,7 +485,7 @@ func RegenerateClient(opts ClientOptions) (*ClientResult, error) {
 		return nil, err
 	}
 
-	if err := os.MkdirAll(opts.OutDir, 0o755); err != nil {
+	if err := os.MkdirAll(opts.OutDir, 0o750); err != nil {
 		return nil, fmt.Errorf("create out dir %q: %w", opts.OutDir, err)
 	}
 	if err := removeGeneratedFiles(opts.OutDir); err != nil {
@@ -495,7 +498,7 @@ func RegenerateClient(opts ClientOptions) (*ClientResult, error) {
 				continue
 			}
 		}
-		if err := os.WriteFile(dst, f.Content, 0o644); err != nil {
+		if err := os.WriteFile(dst, f.Content, 0o600); err != nil {
 			return nil, fmt.Errorf("write %q: %w", dst, err)
 		}
 	}
@@ -530,7 +533,7 @@ func removeGeneratedFiles(outDir string) error {
 			continue
 		}
 		p := filepath.Join(outDir, e.Name())
-		data, err := os.ReadFile(p)
+		data, err := os.ReadFile(p) //nolint:gosec
 		if err != nil {
 			continue
 		}

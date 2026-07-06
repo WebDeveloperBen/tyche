@@ -200,7 +200,7 @@ func TestMount_ServesPrefixAndSubpaths(t *testing.T) {
 
 	sub := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("mounted:" + r.URL.Path))
+		_, _ = w.Write([]byte("mounted:" + r.URL.Path)) //nolint:gosec
 	})
 	if err := router.Mount("/debug", sub); err != nil {
 		t.Fatalf("Mount: %v", err)

@@ -7,6 +7,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -197,9 +198,7 @@ func run(args []string) (int, error) {
 	}
 	if err := kctx.Run(&cli.GlobalFlags); err != nil {
 		var exitErr *ExitError
-		if eex, ok := err.(*ExitError); ok {
-			exitErr = eex
-		} else {
+		if !errors.As(err, &exitErr) {
 			exitErr = &ExitError{Code: 1, Err: err}
 		}
 		// Render the error through the chosen printer so --output=json

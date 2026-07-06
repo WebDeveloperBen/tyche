@@ -29,8 +29,11 @@ jobs:
           restore-keys: ${{ runner.os }}-go-
       - name: Build
         run: go build ./...
-      - name: Test (race)
-        run: go test -race ./...
+      - name: Test
+        run: gotestsum --junitfile test-results.xml -- ./...
+
+      - name: Test race
+        run: gotestsum --junitfile race-test-results.xml -- -race ./...
 
   lint:
     runs-on: ubuntu-latest
@@ -61,4 +64,36 @@ jobs:
           restore-keys: ${{ runner.os }}-go-
       # Fails the build if any modernization is missing; run `task modernize` to fix.
       - name: Check modernization
-        run: go run golang.org/x/tools/go/analysis/passes/modernize/cmd/modernize ./...
+        run: go tool modernize ./...
+
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('go.mod', 'go.sum', 'go.work', 'go.work.sum', '.mise.toml', 'mise.lock') }}
+          restore-keys: ${{ runner.os }}-go-
+
+      - name: Check formatting
+        run: |
+          gofumpt -w .
+          git diff --exit-code
+
+      - name: Check modules
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+          go mod verify
+
+      - name: Check vulnerabilities
+        run: govulncheck ./...
+
+      - name: Check workflows
+        run: |
+          actionlint
+          zizmor .

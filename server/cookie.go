@@ -22,7 +22,7 @@ func SetCookie(w http.ResponseWriter, cfg CookieConfig) {
 		cfg.Path = "/"
 	}
 
-	c := &http.Cookie{
+	c := &http.Cookie{ //nolint:gosec
 		Name:     cfg.Name,
 		Value:    cfg.Value,
 		Path:     cfg.Path,

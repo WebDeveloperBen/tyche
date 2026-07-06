@@ -14,19 +14,33 @@ run:
 linters:
   default: standard
 
+  enable:
+    # Error handling / correctness.
+    - errorlint
+    - nilerr
+    - nilnil
+    - nilnesserr
+
+    # Resource leaks.
+    - bodyclose
+    - sqlclosecheck
+    - rowserrcheck
+
+    # Low-noise hygiene.
+    - copyloopvar
+    - misspell
+    - nolintlint
+
+    # Security. Expect a few suppressions, but worth it.
+    - gosec
+
   exclusions:
-    # Skip files marked "// Code generated ... DO NOT EDIT".
     generated: lax
 
-    # Whole-file/path exclusions (regex, matched against the file path).
     paths:
       - servergen/testdata
       - '.*_gen\.go$'
 
-    # Scoped exclusions: exempt the servergen code emitters from perf/style
-    # linters that would flag intentional string-building in generated output.
-    # These linters are not in the default set today; the rules keep the
-    # codegen exempt if the set is ever broadened.
     rules:
       - path: servergen/(generator|generator_emit|generator_analysis)\.go
         linters:

@@ -24,9 +24,9 @@ func TrailingSlash(cfg ...TrailingSlashConfig) server.Middleware {
 				if c.Redirect {
 					trimmed := path[:len(path)-1]
 					if r.URL.RawQuery != "" {
-						http.Redirect(w, r, trimmed+"?"+r.URL.RawQuery, http.StatusMovedPermanently)
+						http.Redirect(w, r, trimmed+"?"+r.URL.RawQuery, http.StatusMovedPermanently) //nolint:gosec
 					} else {
-						http.Redirect(w, r, trimmed, http.StatusMovedPermanently)
+						http.Redirect(w, r, trimmed, http.StatusMovedPermanently) //nolint:gosec
 					}
 					return nil
 				}

@@ -92,7 +92,7 @@ func readLine(r io.RuneReader) (string, error) {
 	for {
 		ch, _, err := r.ReadRune()
 		if err != nil {
-			if err == io.EOF && b.Len() > 0 {
+			if errors.Is(err, io.EOF) && b.Len() > 0 {
 				return b.String(), nil
 			}
 			return "", err

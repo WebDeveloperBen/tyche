@@ -148,18 +148,18 @@ func TestCleanupGeneratedFiles(t *testing.T) {
 	removePath := filepath.Join(tmpDir, "remove", servergen.GeneratedFilename)
 	goModPath := filepath.Join(tmpDir, "go.mod")
 
-	if err := os.WriteFile(goModPath, []byte("module cleanupfixture\n\ngo 1.25.5\n"), 0o644); err != nil {
+	if err := os.WriteFile(goModPath, []byte("module cleanupfixture\n\ngo 1.25.5\n"), 0o600); err != nil {
 		t.Fatalf("failed to write go.mod: %v", err)
 	}
 	for _, path := range []string{keepPath, removePath} {
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 			t.Fatalf("failed to create dir: %v", err)
 		}
 		packageFile := filepath.Join(filepath.Dir(path), "package.go")
-		if err := os.WriteFile(packageFile, []byte("package fixture\n"), 0o644); err != nil {
+		if err := os.WriteFile(packageFile, []byte("package fixture\n"), 0o600); err != nil {
 			t.Fatalf("failed to write package file: %v", err)
 		}
-		if err := os.WriteFile(path, []byte("package fixture\n"), 0o644); err != nil {
+		if err := os.WriteFile(path, []byte("package fixture\n"), 0o600); err != nil {
 			t.Fatalf("failed to write generated file: %v", err)
 		}
 	}
@@ -277,25 +277,25 @@ func TestGeneratedSamplePackageCompilesAndRunsMultipartRoute(t *testing.T) {
 			continue
 		}
 		src := filepath.Join(srcDir, entry.Name())
-		data, err := os.ReadFile(src)
+		data, err := os.ReadFile(src) //nolint:gosec
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(dstDir, entry.Name()), data, 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(dstDir, entry.Name()), data, 0o600); err != nil { //nolint:gosec
 			t.Fatal(err)
 		}
 	}
-	if err := os.WriteFile(filepath.Join(dstDir, servergen.GeneratedFilename), content, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dstDir, servergen.GeneratedFilename), content, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	goMod := "module example.com/generated/samplepkg\n\n" +
 		"go 1.26\n\n" +
 		"require github.com/webdeveloperben/tyche v0.0.0\n\n" +
 		"replace github.com/webdeveloperben/tyche => " + filepath.ToSlash(repoRoot) + "\n"
-	if err := os.WriteFile(filepath.Join(dstDir, "go.mod"), []byte(goMod), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dstDir, "go.mod"), []byte(goMod), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dstDir, "multipart_generated_test.go"), []byte(generatedMultipartHarness), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dstDir, "multipart_generated_test.go"), []byte(generatedMultipartHarness), 0o600); err != nil {
 		t.Fatal(err)
 	}
 

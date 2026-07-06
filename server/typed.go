@@ -966,7 +966,7 @@ func EnsureMultipartForm(req *http.Request) error {
 	if req.Body == nil {
 		return nil
 	}
-	if err := req.ParseMultipartForm(multipartMaxMemory); err != nil {
+	if err := req.ParseMultipartForm(multipartMaxMemory); err != nil { //nolint:gosec
 		if errors.Is(err, http.ErrNotMultipart) {
 			return fmt.Errorf("unsupported content type %q", req.Header.Get("Content-Type"))
 		}

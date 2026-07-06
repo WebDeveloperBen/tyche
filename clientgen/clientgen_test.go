@@ -353,7 +353,7 @@ func TestGenerate_Compiles(t *testing.T) {
 
 	dir := t.TempDir()
 	for _, f := range res.Files {
-		if err := os.WriteFile(filepath.Join(dir, f.Name), f.Content, 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, f.Name), f.Content, 0o600); err != nil {
 			t.Fatalf("write %s: %v", f.Name, err)
 		}
 	}
@@ -662,11 +662,11 @@ func TestGenerate_RuntimeBehavior(t *testing.T) {
 
 	dir := t.TempDir()
 	for _, f := range res.Files {
-		if err := os.WriteFile(filepath.Join(dir, f.Name), f.Content, 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, f.Name), f.Content, 0o600); err != nil {
 			t.Fatalf("write %s: %v", f.Name, err)
 		}
 	}
-	if err := os.WriteFile(filepath.Join(dir, "runtime_test.go"), []byte(runtimeHarness), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "runtime_test.go"), []byte(runtimeHarness), 0o600); err != nil {
 		t.Fatalf("write harness: %v", err)
 	}
 
