@@ -1,88 +1,47 @@
+<div align="center">
+
 # tyche
 
-Typed Go HTTP handlers that generate their own OpenAPI spec — running over
-**any router you bring**, with optional zero-reflection request/response codecs.
+**Typed Go HTTP handlers that generate their own OpenAPI spec.**
+Run over any router you bring — with optional zero-reflection codecs.
 
-You write a handler as `func(ctx, *In) (*Out, error)`. tyche derives the OpenAPI
-operation from the types and binds/validates/serializes via reflection, so it
-runs with no build step. Optionally, `tyche generate` emits that binding,
-validation, and serialization code ahead of time for a reflection-free fast path
-(like `sqlc`, but for HTTP I/O). Routing is delegated to a pluggable `Adapter` —
-the standard library `net/http.ServeMux` by default, or chi/gin/anything you
-wire up.
+[![CI](https://github.com/webdeveloperben/tyche/actions/workflows/ci.yml/badge.svg)](https://github.com/webdeveloperben/tyche/actions/workflows/ci.yml)
+[![Go Reference](https://pkg.go.dev/badge/github.com/webdeveloperben/tyche.svg)](https://pkg.go.dev/github.com/webdeveloperben/tyche)
+[![Release](https://img.shields.io/github/v/release/webdeveloperben/tyche?logo=github&label=release)](https://github.com/webdeveloperben/tyche/releases)
+[![Go Version](https://img.shields.io/badge/Go-1.25-00ADD8?logo=go&logoColor=white)](https://go.dev/)
+[![License](https://img.shields.io/github/license/webdeveloperben/tyche?label=license&color=blue)](./LICENSE)
+[![Stars](https://img.shields.io/github/stars/webdeveloperben/tyche?style=social)](https://github.com/webdeveloperben/tyche/stargazers)
 
-## Design in one paragraph
+</div>
 
-tyche owns the parts that benefit from being typed and generated — request
-binding, validation, response serialization, and the OpenAPI document — and
-deliberately does **not** own routing. Path matching is a solved problem with
-several fast, battle-tested implementations, so tyche exposes a small `Adapter`
-interface and lets you choose. The core module depends only on the standard
-library; third-party routers are opt-in glue you supply.
+---
 
-## Install
+> Write a handler as `func(ctx, *In) (*Out, error)`. tyche derives the OpenAPI
+> operation from the types, and binds / validates / serializes via reflection —
+> so it runs with **no build step**. Optionally, `tyche generate` emits that
+> binding code ahead of time for a reflection-free fast path (like `sqlc`, but
+> for HTTP I/O). Routing is delegated to a pluggable `Adapter` — the stdlib
+> `net/http.ServeMux` by default, or chi / gin / anything you wire up.
 
-There are two installs, depending on which side of the API you're on.
+## Why tyche
 
-**Using tyche in your own project** (you write a server, or generate a client
-from one). You need both — the Go packages for the imports to resolve, the CLI
-binary to drive `init` / `generate` / `client` / `test` / `build` / `run`.
-
-```sh
-# 1. Add tyche to your go.mod:
-go get github.com/webdeveloperben/tyche
-
-# 2. Install the tyche CLI once. It lives on $GOPATH/bin and works from
-#    any project directory:
-go install github.com/webdeveloperben/tyche/cmd/tyche@latest
-
-# 3. In your project, scaffold the config (one file, committed to git):
-cd myproject
-tyche init --module github.com/me/myproject/client --yes
-tyche generate            # emits server codecs, if you have any
-tyche client              # regenerates the typed client from spec
-```
-
-The CLI is a single binary; you do **not** add it to your project's go.mod. The
-libraries (`server`, `server/apidocs`, `server/plugins`, `clientgen`, etc.) are
-regular Go packages you import and version through your go.mod.
-
-**Prefer a prebuilt binary?** Every release ships static binaries for macOS,
-Linux, and Windows (amd64/arm64) on the
-[Releases page](https://github.com/webdeveloperben/tyche/releases) — no Go
-toolchain required. Download the archive for your platform, verify it against
-`checksums.txt`, extract `tyche`, and drop it on your `PATH`:
-
-```sh
-# Example: macOS arm64. Swap in the version + platform you need.
-VER=1.2.3
-curl -fsSLO "https://github.com/webdeveloperben/tyche/releases/download/v${VER}/tyche_${VER}_darwin_arm64.tar.gz"
-tar -xzf "tyche_${VER}_darwin_arm64.tar.gz"
-sudo mv tyche /usr/local/bin/
-tyche version
-```
-
-**Working on tyche itself.** Clone, install the toolchain, run the task suite:
-
-```sh
-git clone https://github.com/webdeveloperben/tyche
-cd tyche
-mise install              # installs the pinned Go version
-lefthook install          # sets up the pre-commit hook
-task tests                # full suite in a generated worktree
-go build -o ./bin/tyche ./cmd/tyche
-./bin/tyche --help
-task verify:cli           # smoke-test the CLI surface
-```
-
-Cross-router benchmarks live in `benchmarks/comparison/` as their own
-sub-module so chi/gin/huma don't leak into your tyche build. Run them
-with `cd benchmarks/comparison && go test -bench=.`.
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the day-to-day dev loop, the test
-shapes, and the rules for breaking changes.
+- **One handler signature, full OpenAPI.** `func(ctx, *In) (*Out, error)` is all you write — the spec is derived from the types.
+- **No build step required.** Reflection binding means `go run .` works out of the box. Codegen is an *optimization*, not a prerequisite.
+- **Bring your own router.** tyche owns binding/validation/serialization/OpenAPI and deliberately does **not** own routing. The stdlib adapter is the zero-dependency default; any router plugs in via a ~40-line `Adapter`.
+- **`sqlc`-style codegen when you want speed.** `tyche generate` emits byte-level codecs with no runtime reflection — byte-identical output to the reflection path.
+- **Stdlib-only core.** The core module depends only on the standard library. Third-party routers are opt-in glue you supply.
+- **Production-shaped defaults.** `{"data": …}` success envelope, RFC 9457 `application/problem+json` errors, SSE streaming, content negotiation, per-route body limits, instrumentation seam.
 
 ## Quick start
+
+```sh
+mkdir myapi && cd myapi
+go mod init github.com/me/myapi
+go get github.com/webdeveloperben/tyche
+go install github.com/webdeveloperben/tyche/cmd/tyche@latest
+```
+
+Drop this in `main.go`:
 
 ```go
 package main
@@ -113,7 +72,6 @@ func getUser(ctx context.Context, in *GetUserInput) (*GetUserOutput, error) {
 }
 
 func main() {
-	// The stdlib ServeMux adapter is the zero-dependency default.
 	api := server.NewAPI(server.NewServeMuxAdapter(), server.APIConfig{
 		OpenAPI:             server.OpenAPIInfo{Title: "Example API", Version: "1.0.0"},
 		MaxRequestBodyBytes: 10 << 20,
@@ -138,19 +96,93 @@ func main() {
 }
 ```
 
-With tyche installed (see the section above), this runs as-is — `go run .` is
-enough. Typed routes bind, validate, and serialize via reflection out of the box.
-Running `tyche generate` emits zero-reflection codecs that replace the reflection
-path for a speed-up; it is an optimization, not a requirement:
-
 ```sh
-tyche generate ./...   # optional: emit zero-reflection codecs
+tyche init --module github.com/me/myapi/client --yes
+go run .            # curl localhost:8080/api/users/u1
+tyche generate      # optional: emit zero-reflection codecs for a speed-up
 ```
 
-### Build your own API
+The generated `zz_server_routes_gen.go` is registered in an `init()` and replaces the reflection path for that route. **Both paths produce byte-identical responses** — delete the generated file and the reflection path takes over with no other edits.
 
-The Quick Start above is the whole shape; this is the literal end-to-end flow
-from a fresh directory to a running server with generated codecs.
+### Performance
+
+Measured on Apple M3 Pro, tyche over the stdlib `ServeMuxAdapter` (`task benchmark:comparison`):
+
+| Benchmark | tyche (stdlib) | chi | gin | huma |
+| --- | ---: | ---: | ---: | ---: |
+| Static route | 453 ns · 3 allocs | 320 · 2 | 309 · 2 | 992 · 8 |
+| Param route | 482 ns · 4 allocs | 314 · 5 | 296 · 3 | 1076 · 10 |
+| **Body (bind+validate+serialize)** | **1370 ns · 13 allocs** | 2334 · 19 | 2435 · 19 | 4708 · 41 |
+| **Nested body** | **1780 ns · 22 allocs** | 1870 · 23 | 1931 · 23 | 4269 · 48 |
+
+Routing cost is your adapter's cost; the generated codec is where tyche pays off — ~1.7× faster than chi/gin and ~3× faster than huma on real endpoints, adapter-independent. Treat these as regression baselines, not a definitive shootout.
+
+---
+
+## Documentation
+
+The full reference is below in collapsible sections — click to expand. The Quick Start above is the whole shape; everything else is depth on top of it.
+
+<details>
+<summary><strong>Install</strong> — library, CLI, prebuilt binaries, contributing</summary>
+
+There are two installs, depending on which side of the API you're on.
+
+**Using tyche in your own project** — you need both the Go packages (for imports to resolve) and the CLI binary (to drive `init` / `generate` / `client` / `test` / `build` / `run`).
+
+```sh
+# 1. Add tyche to your go.mod:
+go get github.com/webdeveloperben/tyche
+
+# 2. Install the tyche CLI once. It lives on $GOPATH/bin and works from
+#    any project directory:
+go install github.com/webdeveloperben/tyche/cmd/tyche@latest
+
+# 3. In your project, scaffold the config (one file, committed to git):
+cd myproject
+tyche init --module github.com/me/myproject/client --yes
+tyche generate            # emits server codecs, if you have any
+tyche client              # regenerates the typed client from spec
+```
+
+The CLI is a single binary; you do **not** add it to your project's go.mod. The libraries (`server`, `server/apidocs`, `server/plugins`, `clientgen`, etc.) are regular Go packages you import and version through your go.mod.
+
+**Prefer a prebuilt binary?** Every release ships static binaries for macOS, Linux, and Windows (amd64/arm64) on the [Releases page](https://github.com/webdeveloperben/tyche/releases) — no Go toolchain required:
+
+```sh
+# Example: macOS arm64. Swap in the version + platform you need.
+VER=1.2.3
+curl -fsSLO "https://github.com/webdeveloperben/tyche/releases/download/v${VER}/tyche_${VER}_darwin_arm64.tar.gz"
+tar -xzf "tyche_${VER}_darwin_arm64.tar.gz"
+sudo mv tyche /usr/local/bin/
+tyche version
+```
+
+Verify it against `checksums.txt` on the release page.
+
+**Working on tyche itself:**
+
+```sh
+git clone https://github.com/webdeveloperben/tyche
+cd tyche
+mise install              # installs the pinned Go version
+lefthook install          # sets up the pre-commit hook
+task tests                # full suite in a generated worktree
+go build -o ./bin/tyche ./cmd/tyche
+./bin/tyche --help
+task verify:cli           # smoke-test the CLI surface
+```
+
+Cross-router benchmarks live in `benchmarks/comparison/` as their own sub-module so chi/gin/huma don't leak into your tyche build. Run them with `cd benchmarks/comparison && go test -bench=.`.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the day-to-day dev loop, the test shapes, and the rules for breaking changes.
+
+</details>
+
+<details>
+<summary><strong>Build your own API</strong> — the literal end-to-end flow</summary>
+
+The Quick Start above is the whole shape; this is the end-to-end flow from a fresh directory to a running server with generated codecs.
 
 ```sh
 # 1. Create a project.
@@ -174,12 +206,6 @@ go run .
 # curl localhost:8080/api/users/u1
 ```
 
-The generated `zz_server_routes_gen.go` next to `main.go` is registered in an
-`init()` and replaces the reflection path for the route defined in
-`server.Register`. Both paths produce byte-identical responses, so the
-generated file is an optimization, not a behaviour change. Delete it and the
-reflection path takes over with no other edits.
-
 If you want to skip the reflection path entirely, build with a flag:
 
 ```sh
@@ -188,16 +214,16 @@ tyche run .                       # generate, then go run .
 tyche test ./...                  # generate, then go test ./...
 ```
 
-These all run `go run`/`go build`/`go test` against a temporary copy of your
-project with codecs generated in place, so the real working tree is never
-touched by generated code.
+These all run `go run`/`go build`/`go test` against a temporary copy of your project with codecs generated in place, so the real working tree is never touched by generated code.
 
-## The adapter model
+Route input/output types may live anywhere, including a single-file `package main` — tyche keys main-package codecs to match Go's runtime reflection, so the small everything-in-`main.go` app works end to end.
 
-An `Adapter` maps a `(method, path)` to a handler and dispatches requests. That
-is the only thing tyche delegates; binding, validation, serialization,
-middleware, error rendering, and OpenAPI are layered on top and are identical
-regardless of adapter.
+</details>
+
+<details>
+<summary><strong>The adapter model</strong> — routing is pluggable</summary>
+
+An `Adapter` maps a `(method, path)` to a handler and dispatches requests. That is the only thing tyche delegates; binding, validation, serialization, middleware, error rendering, and OpenAPI are layered on top and are identical regardless of adapter.
 
 ```go
 type Adapter interface {
@@ -207,21 +233,15 @@ type Adapter interface {
 }
 ```
 
-Paths arrive in tyche's template form (`:name` params, `*name` trailing
-wildcard); each adapter translates to its router's syntax.
+Paths arrive in tyche's template form (`:name` params, `*name` trailing wildcard); each adapter translates to its router's syntax.
 
 ### Standard library (default)
 
-`server.NewServeMuxAdapter()` uses `net/http.ServeMux`. Because tyche's binders
-read path parameters via `(*http.Request).PathValue`, the stdlib adapter is a
-zero-glue fit — ServeMux's native `{name}` matching populates exactly what the
-codecs read.
+`server.NewServeMuxAdapter()` uses `net/http.ServeMux`. Because tyche's binders read path parameters via `(*http.Request).PathValue`, the stdlib adapter is a zero-glue fit — ServeMux's native `{name}` matching populates exactly what the codecs read.
 
 ### Bring your own router
 
-Any router works in ~40 lines. The one router-specific detail is bridging its
-matched params onto `req.PathValue` so the binding layer stays agnostic. A chi
-adapter, in full:
+Any router works in ~40 lines. The one router-specific detail is bridging its matched params onto `req.PathValue` so the binding layer stays agnostic. A chi adapter, in full:
 
 ```go
 type ChiAdapter struct{ mux chi.Router }
@@ -248,53 +268,27 @@ func (a *ChiAdapter) SetFallback(notFound, methodNotAllowed http.Handler) {
 func (a *ChiAdapter) ServeHTTP(w http.ResponseWriter, r *http.Request) { a.mux.ServeHTTP(w, r) }
 ```
 
-tyche does **not** ship chi/gin/fiber adapters — that would bind the module to
-those routers' versions. The interface is the contract; a reference chi adapter
-lives in `benchmarks/comparison/adapter_chi_test.go` (a separate sub-module
-that pulls in chi only for the comparison benchmarks) and can be copied
-into your project as-is.
+tyche does **not** ship chi/gin/fiber adapters — that would bind the module to those routers' versions. The interface is the contract; a reference chi adapter lives in `benchmarks/comparison/adapter_chi_test.go` (a separate sub-module that pulls in chi only for the comparison benchmarks) and can be copied into your project as-is.
 
-## Typed routes and generated codecs
+</details>
 
-Register a handler as `func(ctx, *In) (*Out, error)`. Input fields are bound from
-`path`, `query`, `header`, and `cookie` tags plus either a JSON body (`Body`
-field, `body` tag, or JSON-tagged fields) or a multipart form body (`form`,
-`file`, and `files` tags). Output fields map to a JSON body, response headers,
-and status.
+<details>
+<summary><strong>Typed routes & generated codecs</strong></summary>
 
-By default this runs through a reflection binder — no codegen step, so iterating
-with `go run` is friction-free. `tyche generate` then inspects each
-`server.Register(...)` call and emits a codec (`zz_server_routes_gen.go`) that
-does the binding, validation, and serialization with hand-written byte-level
-code and **no runtime reflection** — conceptually the same trade `sqlc` makes for
-SQL. The generated codec is registered in an `init()` and picked up
-automatically; when present it replaces the reflection path for that route. Both
-paths produce byte-identical responses, so codegen is a pure performance
-optimization you reach for in production, not a prerequisite.
+Register a handler as `func(ctx, *In) (*Out, error)`. Input fields are bound from `path`, `query`, `header`, and `cookie` tags plus either a JSON body (`Body` field, `body` tag, or JSON-tagged fields) or a multipart form body (`form`, `file`, and `files` tags). Output fields map to a JSON body, response headers, and status.
 
-Multipart routes are supported by both the reflection binder and generated
-server codecs. Generated multipart codecs use the same form/file semantics as
-the runtime binder.
+By default this runs through a reflection binder — no codegen step, so iterating with `go run` is friction-free. `tyche generate` then inspects each `server.Register(...)` call and emits a codec (`zz_server_routes_gen.go`) that does the binding, validation, and serialization with hand-written byte-level code and **no runtime reflection** — conceptually the same trade `sqlc` makes for SQL. The generated codec is registered in an `init()` and picked up automatically; when present it replaces the reflection path for that route. Both paths produce byte-identical responses, so codegen is a pure performance optimization you reach for in production, not a prerequisite.
 
-Successful responses are wrapped in a `{"data": …}` envelope; errors are RFC
-9457 `application/problem+json`. JSON request bodies reject unsupported
-`Content-Type` values with 415, and JSON/SSE responses return 406 when the
-request `Accept` header does not allow the produced media type. Generated route
-metadata records the response content types emitted by generated codecs. The
-server-side `Codec` interface now owns the JSON request decode and success
-envelope path, with `JSONCodec` as the default implementation. Additional
-server-wide codecs can be registered on `APIConfig.Codecs`; JSON remains
-registered by default, and typed route OpenAPI content maps include configured
-codec media types for JSON request and success bodies.
+Multipart routes are supported by both the reflection binder and generated server codecs. Generated multipart codecs use the same form/file semantics as the runtime binder.
 
-Route input/output types may live anywhere, including a single-file `package
-main` — tyche keys main-package codecs to match Go's runtime reflection, so
-the small everything-in-`main.go` app works end to end.
+Successful responses are wrapped in a `{"data": …}` envelope; errors are RFC 9457 `application/problem+json`. JSON request bodies reject unsupported `Content-Type` values with 415, and JSON/SSE responses return 406 when the request `Accept` header does not allow the produced media type. Generated route metadata records the response content types emitted by generated codecs. The server-side `Codec` interface now owns the JSON request decode and success envelope path, with `JSONCodec` as the default implementation. Additional server-wide codecs can be registered on `APIConfig.Codecs`; JSON remains registered by default, and typed route OpenAPI content maps include configured codec media types for JSON request and success bodies.
 
-## Middleware
+</details>
 
-Middleware is `func(next HandlerFunc) HandlerFunc`, applied at three scopes that
-run outermost to innermost: root, group, then route.
+<details>
+<summary><strong>Middleware</strong> — root, group, and route scopes</summary>
+
+Middleware is `func(next HandlerFunc) HandlerFunc`, applied at three scopes that run outermost to innermost: root, group, then route.
 
 ```go
 // Root-level middleware, applied to every route (outermost first):
@@ -309,9 +303,7 @@ server.Register(v1, chatOp, chatHandler,
 )
 ```
 
-Helpers: `server.MiddlewareFromFunc(fn)`, `server.Chain(mw...)`,
-`server.WithMiddleware(mw...)`, `server.NamedMiddleware` + `UseNamed(...)`, and
-`server.NewContextKey[T](name)` for typed request-scoped values.
+Helpers: `server.MiddlewareFromFunc(fn)`, `server.Chain(mw...)`, `server.WithMiddleware(mw...)`, `server.NamedMiddleware` + `UseNamed(...)`, and `server.NewContextKey[T](name)` for typed request-scoped values.
 
 ```go
 var authKey = server.NewContextKey[Claims]("auth")
@@ -327,11 +319,12 @@ func Auth(svc AuthService) server.Middleware {
 }
 ```
 
-## Error handling
+</details>
 
-By default `HTTPError` and validation errors render as RFC 9457
-`application/problem+json`, and unmatched routes / methods return problem+json
-404 / 405 — on every adapter. Override any of these:
+<details>
+<summary><strong>Error handling</strong></summary>
+
+By default `HTTPError` and validation errors render as RFC 9457 `application/problem+json`, and unmatched routes / methods return problem+json 404 / 405 — on every adapter. Override any of these:
 
 ```go
 api.SetErrorHandler(func(w http.ResponseWriter, r *http.Request, err error) {
@@ -342,12 +335,12 @@ api.SetNotFoundHandler(myNotFound)         // http.Handler
 api.SetMethodNotAllowedHandler(my405)      // http.Handler
 ```
 
-## Streaming (Server-Sent Events)
+</details>
 
-`RegisterStream` registers a typed SSE endpoint: input is bound and validated
-like any typed route, the response is documented in OpenAPI as
-`text/event-stream`, and the handler streams type-safe events. (Streaming binds
-via reflection, since there is no generated codec for a streamed response.)
+<details>
+<summary><strong>Streaming (Server-Sent Events)</strong></summary>
+
+`RegisterStream` registers a typed SSE endpoint: input is bound and validated like any typed route, the response is documented in OpenAPI as `text/event-stream`, and the handler streams type-safe events. (Streaming binds via reflection, since there is no generated codec for a streamed response.)
 
 ```go
 type StreamInput struct {
@@ -373,7 +366,10 @@ server.RegisterStream(v1, server.Operation{
 
 For non-typed handlers, `server.NewEventStream(w, r)` returns a raw `EventStream`.
 
-## OpenAPI security
+</details>
+
+<details>
+<summary><strong>OpenAPI security</strong></summary>
 
 ```go
 api.AddSecurityScheme("bearerAuth", server.BearerScheme("JWT"))
@@ -387,7 +383,10 @@ server.Register(v1, server.Operation{
 }, handler)
 ```
 
-## Per-route body limits and mounting
+</details>
+
+<details>
+<summary><strong>Per-route body limits & mounting</strong></summary>
 
 ```go
 // Override the API-wide MaxRequestBodyBytes for one route (0 = unlimited).
@@ -397,13 +396,12 @@ server.Register(v1, uploadOp, uploadHandler, server.WithMaxBodyBytes(100<<20))
 api.Mount("/debug/pprof", pprofMux)
 ```
 
-## Content negotiation
+</details>
 
-Typed routes use `application/json` by default. Register extra server codecs
-with `APIConfig.Codecs`; `JSONCodec` remains available automatically. OpenAPI
-advertises every configured codec for non-multipart request bodies and success
-responses, and runtime request/response selection uses `Content-Type` and
-`Accept`.
+<details>
+<summary><strong>Content negotiation</strong></summary>
+
+Typed routes use `application/json` by default. Register extra server codecs with `APIConfig.Codecs`; `JSONCodec` remains available automatically. OpenAPI advertises every configured codec for non-multipart request bodies and success responses, and runtime request/response selection uses `Content-Type` and `Accept`.
 
 ```go
 api := server.NewAPI(adapter, server.APIConfig{
@@ -416,14 +414,14 @@ server.Register(api, op, handler,
 )
 ```
 
-When extra codecs are configured, older JSON-only generated route codecs are
-bypassed in favour of the negotiated reflection path. Regenerated route codecs
-receive the route codec set and keep the fast JSON path when JSON is selected.
+When extra codecs are configured, older JSON-only generated route codecs are bypassed in favour of the negotiated reflection path. Regenerated route codecs receive the route codec set and keep the fast JSON path when JSON is selected.
 
-## Instrumentation
+</details>
 
-A dependency-free seam for tracing/metrics reporting method, route template,
-status, response bytes, and duration per request:
+<details>
+<summary><strong>Instrumentation</strong></summary>
+
+A dependency-free seam for tracing/metrics reporting method, route template, status, response bytes, and duration per request:
 
 ```go
 api.UseHTTP(plugins.InstrumentHTTP(plugins.ObserverFunc(func(i plugins.RequestInfo) {
@@ -431,14 +429,14 @@ api.UseHTTP(plugins.InstrumentHTTP(plugins.ObserverFunc(func(i plugins.RequestIn
 })))
 ```
 
-`server.RoutePattern(r)` returns the matched route template (e.g. `/users/:id`)
-as a low-cardinality metric label. OpenTelemetry is intentionally not a hard
-dependency; this is the bridge seam.
+`server.RoutePattern(r)` returns the matched route template (e.g. `/users/:id`) as a low-cardinality metric label. OpenTelemetry is intentionally not a hard dependency; this is the bridge seam.
 
-## Testing
+</details>
 
-The `servertest` package builds requests against any `http.Handler` (an `*API`)
-and unwraps the standard `DataResponse` envelope:
+<details>
+<summary><strong>Testing</strong> — the <code>servertest</code> package</summary>
+
+The `servertest` package builds requests against any `http.Handler` (an `*API`) and unwraps the standard `DataResponse` envelope:
 
 ```go
 client := servertest.New(t, api)
@@ -448,7 +446,10 @@ got := servertest.DecodeData[User](t, resp)
 problem := servertest.DecodeProblem(t, client.GET("/secret").AssertStatus(401))
 ```
 
-## CLI
+</details>
+
+<details>
+<summary><strong>CLI reference</strong></summary>
 
 ```sh
 go install github.com/webdeveloperben/tyche/cmd/tyche@latest
@@ -469,21 +470,13 @@ tyche version                            # print build identity
 tyche completion bash > /etc/bash_completion.d/tyche
 ```
 
-A `tyche.json` at the project root holds the inputs the CLI would otherwise take
-as flags. Discovery walks up from cwd to the first `go.mod`. Flags always
-override file values. Pass `--config <path>` to point at a non-default file or
-`--quiet` to suppress the "using config ..." line. Set `TYCHE_CONFIG` to point
-the CLI at a specific file via the environment.
+A `tyche.json` at the project root holds the inputs the CLI would otherwise take as flags. Discovery walks up from cwd to the first `go.mod`. Flags always override file values. Pass `--config <path>` to point at a non-default file or `--quiet` to suppress the "using config ..." line. Set `TYCHE_CONFIG` to point the CLI at a specific file via the environment.
 
-Every command honours a global `--format` flag (`human|json|quiet`). Use
-`--format=json` to get machine-readable output suitable for `| jq`; use
-`--format=quiet` in CI and scripts where you only want the data line.
+Every command honours a global `--format` flag (`human|json|quiet`). Use `--format=json` to get machine-readable output suitable for `| jq`; use `--format=quiet` in CI and scripts where you only want the data line.
 
 ### Embedding the CLI use-cases
 
-The CLI is split so the use-case logic (scaffold, generate, regenerate
-client, worktree plumbing) lives in `internal/app` and is reachable
-without the CLI. If you embed tyche in your own tooling:
+The CLI is split so the use-case logic (scaffold, generate, regenerate client, worktree plumbing) lives in `internal/app` and is reachable without the CLI. If you embed tyche in your own tooling:
 
 ```go
 import "github.com/webdeveloperben/tyche/internal/app"
@@ -495,16 +488,14 @@ written, err := app.Scaffold(app.ScaffoldOptions{
 })
 ```
 
-`internal/app` takes plain Go values; the CLI is a thin Kong adapter on
-top. The servergen, clientgen, and server packages never import
-`internal/cli` or any CLI framework.
+`internal/app` takes plain Go values; the CLI is a thin Kong adapter on top. The servergen, clientgen, and server packages never import `internal/cli` or any CLI framework.
 
-## Generated Go client
+</details>
 
-`tyche client` generates a self-contained, standard-library-only typed Go
-client from the OpenAPI spec your server emits — for Go code that *consumes* your
-API (other services, a CLI, a customer SDK). It bakes in tyche's conventions: the
-`{"data": …}` envelope and problem+json errors as a typed `*APIError`.
+<details>
+<summary><strong>Generated Go client</strong></summary>
+
+`tyche client` generates a self-contained, standard-library-only typed Go client from the OpenAPI spec your server emits — for Go code that *consumes* your API (other services, a CLI, a customer SDK). It bakes in tyche's conventions: the `{"data": …}` envelope and problem+json errors as a typed `*APIError`.
 
 ```go
 c := client.New("https://api.you.com", client.WithBearerToken(tok))
@@ -514,76 +505,45 @@ var apiErr *client.APIError
 if errors.As(err, &apiErr) && apiErr.StatusCode == 404 { /* ... */ }
 ```
 
-Because the client is its own module with its own tags, consumers
-`go get …/client@vX.Y.Z` and the contract is checked at compile time. SSE
-operations generate a streaming method returning a typed `*Stream[Event]`
-(scanner API: `Next`/`Event`/`EventName`/`ID`/`Retry`/`Err`/`Close`).
+Because the client is its own module with its own tags, consumers `go get …/client@vX.Y.Z` and the contract is checked at compile time. SSE operations generate a streaming method returning a typed `*Stream[Event]` (scanner API: `Next`/`Event`/`EventName`/`ID`/`Retry`/`Err`/`Close`).
 
-String and integer enums generate a named type with typed constants, `allOf`
-compositions of objects are merged into a single struct (keeping the component
-name), and a success response in a non-JSON media type returns `[]byte` rather
-than being decoded or dropped.
+String and integer enums generate a named type with typed constants, `allOf` compositions of objects are merged into a single struct (keeping the component name), and a success response in a non-JSON media type returns `[]byte` rather than being decoded or dropped.
 
-Operations with `multipart/form-data` request bodies generate `form`, `file`,
-and `files` input fields. File inputs use the generated `client.File` type,
-which carries the part filename, content reader, and optional content type.
-Non-multipart request/response encoding goes through the generated `Codec`
-interface; `client.WithCodec(...)` can swap the default `JSONCodec` for a
-compatible JSON vendor media type or another implementation. The codec owns
-its own `MediaType()` and `MatchesResponse(...)`, so a vendor JSON codec
-that wants to accept plain `application/json` responses (or vice versa)
-encodes that decision in the codec rather than in the runtime. By default,
-raw downloads and other non-envelope success responses send `Accept` from
-each operation's documented success media types, so a `/report` operation
-returns `[]byte` against `Accept: application/pdf` instead of being decoded
-through the codec.
+Operations with `multipart/form-data` request bodies generate `form`, `file`, and `files` input fields. File inputs use the generated `client.File` type, which carries the part filename, content reader, and optional content type. Non-multipart request/response encoding goes through the generated `Codec` interface; `client.WithCodec(...)` can swap the default `JSONCodec` for a compatible JSON vendor media type or another implementation. The codec owns its own `MediaType()` and `MatchesResponse(...)`, so a vendor JSON codec that wants to accept plain `application/json` responses (or vice versa) encodes that decision in the codec rather than in the runtime. By default, raw downloads and other non-envelope success responses send `Accept` from each operation's documented success media types, so a `/report` operation returns `[]byte` against `Accept: application/pdf` instead of being decoded through the codec.
 
-By default, structurally identical schemas share one generated Go type. Use
-`--type-naming operation-scoped` when distinct operations should keep distinct
-body/output/event types even if their schemas have the same shape.
+By default, structurally identical schemas share one generated Go type. Use `--type-naming operation-scoped` when distinct operations should keep distinct body/output/event types even if their schemas have the same shape.
 
-**Current limitations:** `oneOf`/`anyOf` unions plus non-object `allOf`
-compositions are emitted as `json.RawMessage`.
+**Current limitations:** `oneOf`/`anyOf` unions plus non-object `allOf` compositions are emitted as `json.RawMessage`.
 
-## Benchmarks
+</details>
 
-Measured on Apple M3 Pro, tyche over the stdlib `ServeMuxAdapter`:
+<details>
+<summary><strong>Developing tyche</strong></summary>
 
-```sh
-task benchmark:comparison
-```
-
-| Benchmark | tyche (stdlib) | chi | gin | huma |
-| --- | ---: | ---: | ---: | ---: |
-| Static route | 453 ns · 3 allocs | 320 · 2 | 309 · 2 | 992 · 8 |
-| Param route | 482 ns · 4 allocs | 314 · 5 | 296 · 3 | 1076 · 10 |
-| **Body (bind+validate+serialize)** | **1370 ns · 13 allocs** | 2334 · 19 | 2435 · 19 | 4708 · 41 |
-| **Nested body** | **1780 ns · 22 allocs** | 1870 · 23 | 1931 · 23 | 4269 · 48 |
-
-How to read this:
-
-- **Routing cost is your adapter's cost.** On trivial static/param routes the
-  stdlib-backed path carries a little overhead (ServeMux's own match allocations
-  plus the edge tracked-writer) versus a raw router. If routing is your
-  bottleneck, plug in gin or chi via the adapter and keep everything else.
-- **The generated codec is where tyche pays off.** On real endpoints that bind,
-  validate, and serialize a JSON body, tyche is ~1.7× faster than chi/gin and
-  ~3× faster than huma — and that advantage is adapter-independent, because the
-  codec is the same no matter what routes the request.
-
-Treat these as regression baselines, not a definitive shootout.
-
-## Developing tyche
-
-For day-to-day contributor workflow, test shapes, and the rules for breaking
-changes, see [CONTRIBUTING.md](CONTRIBUTING.md). The short version:
+For day-to-day contributor workflow, test shapes, and the rules for breaking changes, see [CONTRIBUTING.md](CONTRIBUTING.md). The short version:
 
 - Clone, `mise install`, `lefthook install`.
-- `task tests` runs the full suite through a generated worktree (the way CI does
-  it). `go test ./...` runs the same tests directly without the worktree.
-- `go build -o ./bin/tyche ./cmd/tyche` then `./bin/tyche --help` exercises the
-  CLI locally without installing.
-- Lint with `golangci-lint run ./...`; check modernization with
-  `task modernize:check`; fix with `task modernize`.
-- Breaking changes are allowed but must be called out in the PR description
-  and added to the "Unreleased" section at the top of [CHANGELOG.md](CHANGELOG.md).
+- `task tests` runs the full suite through a generated worktree (the way CI does it). `go test ./...` runs the same tests directly without the worktree.
+- `go build -o ./bin/tyche ./cmd/tyche` then `./bin/tyche --help` exercises the CLI locally without installing.
+- Lint with `golangci-lint run ./...`; check modernization with `task modernize:check`; fix with `task modernize`.
+- Breaking changes are allowed but must be called out in the PR description and added to the "Unreleased" section at the top of [CHANGELOG.md](CHANGELOG.md).
+
+</details>
+
+---
+
+## For AI agents
+
+If you're an agent helping someone adopt or contribute to tyche, here's the map:
+
+- **What it is:** a Go HTTP framework where handler signatures are `func(ctx, *In) (*Out, error)` and OpenAPI is derived from the types.
+- **Entry points:** `server.NewAPI`, `server.Register`, `server.RegisterStream`, `server.NewServeMuxAdapter` (`server/server.go`).
+- **Codegen:** `cmd/tyche` (CLI), `internal/app` (embeddable use-cases), `servergen/` (server codec generation), `clientgen/` (typed client generation).
+- **Adapters:** `server.Adapter` interface — stdlib `ServeMuxAdapter` ships by default; reference chi adapter in `benchmarks/comparison/adapter_chi_test.go`.
+- **Conventions:** `{"data": …}` success envelope, RFC 9457 problem+json errors, `zz_server_routes_gen.go` is generated and `init()`-registered.
+- **Deep docs:** [CONTRIBUTING.md](CONTRIBUTING.md) (dev loop, test shapes, breaking-change rules) and [CHANGELOG.md](CHANGELOG.md) (versioned history).
+- **License:** Apache 2.0 — see [LICENSE](./LICENSE).
+
+## License
+
+Apache 2.0 — see [LICENSE](./LICENSE).
