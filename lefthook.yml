@@ -23,14 +23,14 @@ pre-commit:
     # but it mutates source, so it runs in the format phase with stage_fixed.
     - name: modernize
       glob: "*.go"
-      run: go run golang.org/x/tools/go/analysis/passes/modernize/cmd/modernize -fix ./...
+      run: go tool modernize ./...
       stage_fixed: true
 
     - name: gofumpt
       glob: "*.go"
       exclude:
         - '.*_gen\.go$'
-        - '^servergen/testdata/'
+        - "^servergen/testdata/"
       run: gofumpt -w {staged_files}
       stage_fixed: true
 
