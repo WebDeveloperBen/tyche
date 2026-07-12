@@ -1,9 +1,11 @@
-# goreleaser builds and publishes the cross-platform `tyche` CLI binaries.
+# goreleaser builds the cross-platform `tyche` CLI binaries.
 #
 # It complements release-please, which owns the version bump, CHANGELOG, git
 # tag, and the GitHub Release (with notes). goreleaser runs right after, in the
-# same workflow, and ATTACHES the compiled binaries to that existing release.
-# `release.mode: keep-existing` means it never touches release-please's notes.
+# same workflow, and only BUILDS the archives + checksums into ./dist. It does
+# NOT create a GitHub Release (`release.disable: true`) — the workflow attaches
+# the built artifacts to release-please's draft release and publishes it, so
+# there is exactly one release per version and it carries release-please's notes.
 #
 # Validate locally:      go run github.com/goreleaser/goreleaser/v2@latest check
 # Dry-run a full build:  go run github.com/goreleaser/goreleaser/v2@latest release --snapshot --clean
@@ -49,9 +51,11 @@ changelog:
   disable: true
 
 release:
-  github:
-    owner: WebDeveloperBen
-    name: tyche
-  # release-please created the release + notes; goreleaser only attaches the
-  # binaries and checksums to it.
-  mode: keep-existing
+  # goreleaser must NOT create or publish a GitHub Release. release-please owns
+  # the release object and its changelog notes; if goreleaser also created one
+  # it would produce a duplicate (an empty-notes published release alongside
+  # release-please's orphaned, note-carrying draft). Instead goreleaser only
+  # builds the archives + checksums into ./dist, and the release workflow
+  # attaches them to release-please's draft and publishes it.
+  # See .github/workflows/release_please.yml.
+  disable: true

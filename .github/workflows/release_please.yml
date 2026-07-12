@@ -9,8 +9,10 @@ name: release-please
 #   1. release-please  - opens/maintains the release PR; on merge, creates a
 #      draft GitHub Release (no git tag yet — drafts don't create tags).
 #   2. release-assets  - creates the git tag at the merge commit, runs
-#      goreleaser to build cross-platform binaries and attach them to the
+#      goreleaser to build the cross-platform binaries, attaches them to the
 #      still-draft release, then publishes the release (--draft=false).
+#      goreleaser does NOT create its own release (release.disable), so it can
+#      never duplicate release-please's — see .goreleaser.yaml.
 #
 # Why draft-first: this repo has GitHub's "Release immutability" enabled, so
 # once a release is published its assets/tags cannot be modified. Building
@@ -101,9 +103,9 @@ jobs:
           cache: false
           go-version-file: go.mod
 
-      # goreleaser attaches binaries to the existing draft release
-      # (`release.mode: keep-existing` in .goreleaser.yaml). Drafts accept asset
-      # uploads even with immutable releases enabled.
+      # goreleaser only BUILDS the archives + checksums into ./dist. It does not
+      # create a GitHub Release (`release.disable: true` in .goreleaser.yaml), so
+      # it can never produce a duplicate release competing with release-please's.
       - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:
           distribution: goreleaser
@@ -111,6 +113,19 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Attach the freshly built artifacts to release-please's *draft* release
+      # (matched by tag; gh resolves drafts too). Drafts accept asset uploads
+      # even with immutable releases enabled. --clobber makes re-runs idempotent.
+      - name: Attach binaries to draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "$TAG_NAME" \
+            dist/*.tar.gz \
+            dist/*.zip \
+            dist/checksums.txt \
+            --clobber
 
       # All assets are attached; flip the release from draft to published.
       # This is the transition that engages immutability — after this runs,
