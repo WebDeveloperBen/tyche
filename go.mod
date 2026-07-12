@@ -9,10 +9,7 @@ require (
 	golang.org/x/tools v0.47.0
 )
 
-require (
-	github.com/google/go-cmp v0.7.0 // indirect
-	github.com/xyproto/randomstring v1.2.0 // indirect
-)
+require github.com/xyproto/randomstring v1.2.0 // indirect
 
 require (
 	github.com/bitfield/gotestdox v0.2.2 // indirect
