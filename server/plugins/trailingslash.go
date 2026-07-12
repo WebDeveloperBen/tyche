@@ -2,6 +2,8 @@ package plugins
 
 import (
 	"net/http"
+	"net/url"
+	"strings"
 
 	"github.com/webdeveloperben/tyche/server"
 )
@@ -23,11 +25,24 @@ func TrailingSlash(cfg ...TrailingSlashConfig) server.Middleware {
 			if len(path) > 1 && path[len(path)-1] == '/' {
 				if c.Redirect {
 					trimmed := path[:len(path)-1]
+					target := trimmed
 					if r.URL.RawQuery != "" {
-						http.Redirect(w, r, trimmed+"?"+r.URL.RawQuery, http.StatusMovedPermanently) //nolint:gosec
-					} else {
-						http.Redirect(w, r, trimmed, http.StatusMovedPermanently) //nolint:gosec
+						target = trimmed + "?" + r.URL.RawQuery
 					}
+
+					// Validate the redirect target is a local (relative) URL to
+					// prevent open redirects to external hosts. Backslashes are
+					// normalized to forward slashes since some browsers treat
+					// "\" as "/", which could otherwise smuggle a host past parsing.
+					normalized := strings.ReplaceAll(target, "\\", "/")
+					parsed, err := url.Parse(normalized)
+					if err != nil || parsed.Hostname() != "" {
+						http.Error(w, "Bad Request", http.StatusBadRequest)
+						return nil //nolint:nilerr // request already rejected with 400; nothing to propagate
+					}
+
+					// Target validated above as a local/relative URL, so this is not an open redirect.
+					http.Redirect(w, r, normalized, http.StatusMovedPermanently) //nolint:gosec // G710: target validated as local URL
 					return nil
 				}
 
