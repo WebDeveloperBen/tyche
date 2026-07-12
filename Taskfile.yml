@@ -117,7 +117,7 @@ tasks:
   tests:
     desc: Run all Go tests against a temporary generated worktree
     cmds:
-      - go test ./...
+      - gotestsum -- ./...
 
   modernize:
     desc: Apply Go modernization fixes (min/max, slices, range-over-int, etc.) across the module
