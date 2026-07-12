@@ -61,5 +61,6 @@ jobs:
         if: ${{ steps.release.outputs.release_created }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ steps.release.outputs.tag_name }}
         run: |
-          gh release edit "${{ steps.release.outputs.tag_name }}" --draft=false
+          gh release edit "$TAG_NAME" --draft=false
