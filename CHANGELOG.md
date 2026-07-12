@@ -95,6 +95,14 @@
   415 for unsupported `Content-Type`; JSON and SSE responses return 406 when
   the request `Accept` header does not allow the produced media type.
 
+## [2.0.2](https://github.com/WebDeveloperBen/tyche/compare/v2.0.1...v2.0.2) (2026-07-12)
+
+
+### Bug Fixes
+
+* **ci:** gorealeser ([a4f0758](https://github.com/WebDeveloperBen/tyche/commit/a4f075857cdf753a5bc328a364ffc4e2a8490d6e))
+* **ci:** zizmor expanded braces finding ([4e846c3](https://github.com/WebDeveloperBen/tyche/commit/4e846c3845e34604d12bdaa8d6f13fcabdd544f3))
+
 ## [2.0.1](https://github.com/WebDeveloperBen/tyche/compare/v2.0.0...v2.0.1) (2026-07-12)
 
 
