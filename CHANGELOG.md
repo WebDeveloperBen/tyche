@@ -95,6 +95,14 @@
   415 for unsupported `Content-Type`; JSON and SSE responses return 406 when
   the request `Accept` header does not allow the produced media type.
 
+## [2.0.5](https://github.com/WebDeveloperBen/tyche/compare/v2.0.4...v2.0.5) (2026-07-12)
+
+
+### Bug Fixes
+
+* **ci:** stop goreleaser creating duplicate releases ([63b5ebb](https://github.com/WebDeveloperBen/tyche/commit/63b5ebb7a20ca2d9dbab7a34b62e5a5d4360e6ff))
+* **ci:** stop goreleaser creating duplicate releases ([#18](https://github.com/WebDeveloperBen/tyche/issues/18)) ([c481cea](https://github.com/WebDeveloperBen/tyche/commit/c481cea3d61896ec064d103f1e9bb2c405522ed7))
+
 ## [2.0.4](https://github.com/WebDeveloperBen/tyche/compare/v2.0.3...v2.0.4) (2026-07-12)
 
 
