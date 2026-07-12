@@ -2,18 +2,30 @@ name: release-please
 
 # Automates semantic-versioned releases from Conventional Commits on main.
 # release-please opens/maintains a "release PR" that bumps the version and
-# updates CHANGELOG.md; merging that PR creates a GitHub release and a vX.Y.Z
-# git tag, which is what `go get github.com/webdeveloperben/tyche@vX.Y.Z`
-# resolves against.
+# updates CHANGELOG.md; merging that PR creates a *draft* GitHub Release and
+# bumps .release-please-manifest.json.
+#
+# The release is split into two jobs:
+#   1. release-please  - opens/maintains the release PR; on merge, creates a
+#      draft GitHub Release (no git tag yet — drafts don't create tags).
+#   2. release-assets  - creates the git tag at the merge commit, runs
+#      goreleaser to build cross-platform binaries and attach them to the
+#      still-draft release, then publishes the release (--draft=false).
+#
+# Why draft-first: this repo has GitHub's "Release immutability" enabled, so
+# once a release is published its assets/tags cannot be modified. Building
+# everything while the release is still a draft (assets attach fine to
+# drafts), and only then flipping it to published, is GitHub's recommended
+# pattern for immutable releases.
+#
+# Splitting into two jobs means a goreleaser failure never blocks the tag or
+# release record: job 1 always completes, and job 2 can be retried
+# independently until the binaries attach and the release is published.
 
 on:
   push:
     branches:
       - main
-
-permissions:
-  contents: write
-  pull-requests: write
 
 # Avoid overlapping runs racing to update the release PR.
 concurrency:
@@ -23,6 +35,12 @@ concurrency:
 jobs:
   release-please:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the draft Release record
+      pull-requests: write # open/maintain the release PR
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
       - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         id: release
@@ -31,37 +49,55 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
-      # When merging the release PR just created a release (and tag), build the
-      # cross-platform binaries and attach them to that release. All steps below
-      # are gated on release_created so ordinary pushes to main do nothing here.
+  release-assets:
+    # Only run when release-please just created a release (i.e. the release PR
+    # was merged). Ordinary pushes to main do nothing here.
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the git tag, upload binaries, publish the release
+    env:
+      TAG_NAME: ${{ needs.release-please.outputs.tag_name }}
+    steps:
+      # Check out the merge commit that triggered this workflow run. This is
+      # the commit release-please just landed on main, and the target the tag
+      # must point at. fetch-depth: 0 so goreleaser can read full history.
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        if: ${{ steps.release.outputs.release_created }}
         with:
           persist-credentials: false
-          ref: ${{ steps.release.outputs.tag_name }}
-          fetch-depth: 0 # goreleaser needs full history + tags to derive the version
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      # release-please created a *draft* release, which means no git tag was
+      # created. goreleaser derives the version from the tag at HEAD, so create
+      # the tag here at the merge commit before running it.
+      - name: Create git tag
+        run: |
+          git tag "$TAG_NAME" "$GITHUB_SHA"
+          git push origin "$TAG_NAME"
 
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
-        if: ${{ steps.release.outputs.release_created }}
         with:
           cache: false
           go-version-file: go.mod
 
+      # goreleaser attaches binaries to the existing draft release
+      # (`release.mode: keep-existing` in .goreleaser.yaml). Drafts accept asset
+      # uploads even with immutable releases enabled.
       - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
-        if: ${{ steps.release.outputs.release_created }}
         with:
           distribution: goreleaser
           version: "~> v2"
           args: release --clean
         env:
-          # GITHUB_TOKEN has contents:write (see permissions above), which is all
-          # goreleaser needs to upload binaries to the existing GitHub release.
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # All assets are attached; flip the release from draft to published.
+      # This is the transition that engages immutability — after this runs,
+      # the release's assets and tag can no longer be modified.
       - name: Publish draft release
-        if: ${{ steps.release.outputs.release_created }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG_NAME: ${{ steps.release.outputs.tag_name }}
         run: |
           gh release edit "$TAG_NAME" --draft=false
