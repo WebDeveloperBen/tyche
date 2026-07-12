@@ -113,10 +113,24 @@ jobs:
 
           git tag --force "$TAG_NAME" "$RELEASE_SHA"
 
+          # Probe the remote for the tag. `gh api` returns the error body on
+          # 404, so we discard any non-SHA output with `// empty` and capture
+          # the subshell's status separately: a 404 must NOT be confused with
+          # "the tag exists at a different SHA". `|| true` only swallows the
+          # exit code; the stdout capture is what we test.
+          tag_get_status=0
           existing_sha="$(
             gh api "repos/${GITHUB_REPOSITORY}/git/refs/tags/${TAG_NAME}" \
-              --jq '.object.sha' 2>/dev/null || true
-          )"
+              --jq '.object.sha // empty' 2>/dev/null
+          )" || tag_get_status=$?
+
+          # status 0 + empty string  -> tag does not exist (404 body has no .object.sha)
+          # status 0 + non-empty sha  -> tag exists, capture its SHA
+          # status != 0               -> transport / API error, fail loud
+          if [ "$tag_get_status" -ne 0 ]; then
+            echo "::error::Failed to query remote tag ${TAG_NAME} (gh api exit ${tag_get_status})"
+            exit 1
+          fi
 
           if [ -n "$existing_sha" ]; then
             if [ "$existing_sha" != "$RELEASE_SHA" ]; then
@@ -132,6 +146,8 @@ jobs:
               -f ref="refs/tags/${TAG_NAME}" \
               -f sha="${RELEASE_SHA}" \
               --silent
+
+            echo "Created remote tag ${TAG_NAME} at ${RELEASE_SHA}."
           fi
 
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
