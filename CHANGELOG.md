@@ -95,6 +95,13 @@
   415 for unsupported `Content-Type`; JSON and SSE responses return 406 when
   the request `Accept` header does not allow the produced media type.
 
+## [2.0.4](https://github.com/WebDeveloperBen/tyche/compare/v2.0.3...v2.0.4) (2026-07-12)
+
+
+### Bug Fixes
+
+* redirect url risk ([c362f7e](https://github.com/WebDeveloperBen/tyche/commit/c362f7ef0f17ef8688223dfaf4c49602f8cce75c))
+
 ## [2.0.3](https://github.com/WebDeveloperBen/tyche/compare/v2.0.2...v2.0.3) (2026-07-12)
 
 
