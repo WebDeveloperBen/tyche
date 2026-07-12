@@ -95,6 +95,18 @@
   415 for unsupported `Content-Type`; JSON and SSE responses return 406 when
   the request `Accept` header does not allow the produced media type.
 
+## [2.0.1](https://github.com/WebDeveloperBen/tyche/compare/v2.0.0...v2.0.1) (2026-07-12)
+
+
+### Bug Fixes
+
+* **ci:** add lefthook to catch out of date go.mod ([a720ed7](https://github.com/WebDeveloperBen/tyche/commit/a720ed79fa09d3602c812d2430f684902be8cdf7))
+* **ci:** prevent cache poisoning in ci ([4d208d7](https://github.com/WebDeveloperBen/tyche/commit/4d208d7a1249f7abbb2d3e7cc06df0ade6219a61))
+* correctness linting ([4da019e](https://github.com/WebDeveloperBen/tyche/commit/4da019e1d5f72abcabdd5e3afeff53768554dbdb))
+* put tools into mise so they install in ci ([9a25019](https://github.com/WebDeveloperBen/tyche/commit/9a2501938b528056a6a58e1e9ec7d7289a42a63d))
+* update go mod ([0ec22c4](https://github.com/WebDeveloperBen/tyche/commit/0ec22c4487a039400aa2210edb915b77ccf63245))
+* vuln in golang std lib bump to latest ([d079fd0](https://github.com/WebDeveloperBen/tyche/commit/d079fd012d001055c3835c4e53afe5f723c9df8e))
+
 ## [2.0.0](https://github.com/WebDeveloperBen/tyche/compare/v1.1.1...v2.0.0) (2026-07-03)
 
 
