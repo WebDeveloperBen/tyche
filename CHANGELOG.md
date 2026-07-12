@@ -95,6 +95,16 @@
   415 for unsupported `Content-Type`; JSON and SSE responses return 406 when
   the request `Accept` header does not allow the produced media type.
 
+## [2.0.3](https://github.com/WebDeveloperBen/tyche/compare/v2.0.2...v2.0.3) (2026-07-12)
+
+
+### Bug Fixes
+
+* **ci:** combine race and tests to just run once ([4136e2f](https://github.com/WebDeveloperBen/tyche/commit/4136e2fc599b0662d00db9a6d54053c8379d06a9))
+* **ci:** split release flow and create tag before goreleaser ([5e02027](https://github.com/WebDeveloperBen/tyche/commit/5e02027b0edfc614311b8289b30553b2f4630ae3))
+* **ci:** tag locally for goreleaser and make release job idempotent ([58384c0](https://github.com/WebDeveloperBen/tyche/commit/58384c00a1a5a985a4c402262fc5e4537111e130))
+* **ci:** use ref for checkout ([f5ab9cd](https://github.com/WebDeveloperBen/tyche/commit/f5ab9cdd2397b3d07c1b84b82ff0afd26cdc4f6e))
+
 ## [2.0.2](https://github.com/WebDeveloperBen/tyche/compare/v2.0.1...v2.0.2) (2026-07-12)
 
 
