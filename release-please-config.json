@@ -1,16 +1,15 @@
 {
   "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "last-release-sha": "8dd802ef11c8a91217426b378406f833ddc9dfee",
   "packages": {
     ".": {
       "release-type": "go",
       "package-name": "tyche",
       "include-component-in-tag": false,
       "changelog-path": "CHANGELOG.md",
-      "bump-patch-for-minor-pre-major": true,
-      "bump-minor-pre-major": true,
-      "bump-patch-for-minor-pre-major": false,
-      "draft": true
+      "release-as": "1.0.0",
+      "draft": true,
+      "force-tag-creation": true
     }
   }
 }
-
