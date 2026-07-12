@@ -6,7 +6,8 @@
       "package-name": "tyche",
       "include-component-in-tag": false,
       "changelog-path": "CHANGELOG.md",
-      "draft": true
+      "draft": true,
+      "last-release-sha": "cef32454af6f8a390406b29c7d1da17bbc5e3870"
     }
   }
 }
