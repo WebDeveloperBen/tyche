@@ -34,6 +34,15 @@ pre-commit:
       run: gofumpt -w {staged_files}
       stage_fixed: true
 
+    - name: mod-tidy
+      glob:
+        - "go.mod"
+        - "go.sum"
+        - "*.go"
+      run: |
+        go mod tidy
+      stage_fixed: true
+
     - name: verify
       glob:
         - "*.go"
