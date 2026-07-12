@@ -2,27 +2,41 @@ name: release-please
 
 # Automates semantic-versioned releases from Conventional Commits on main.
 # release-please opens/maintains a "release PR" that bumps the version and
-# updates CHANGELOG.md; merging that PR creates a *draft* GitHub Release and
-# bumps .release-please-manifest.json.
+# updates CHANGELOG.md; merging that PR creates a *draft* GitHub Release.
 #
-# The release is split into two jobs:
-#   1. release-please  - opens/maintains the release PR; on merge, creates a
-#      draft GitHub Release (no git tag yet — drafts don't create tags).
+# The release is split into three jobs so that release-please never has to
+# compute the next release PR before the tag for the current release exists.
+# A single release-please invocation does (a) createReleases() for any merged
+# release PRs and then (b) createPullRequests() for the next one, in that
+# order. When (a) creates a *draft* release no git tag is produced, and the
+# manifest's just-updated version has no release-or-tag boundary release-please
+# can latch onto, so (b) would open a duplicate (or wrongly-bumped) release PR
+# before this workflow has had a chance to tag the merge commit. Splitting
+# "release" and "pull request" into separate release-please invocations, with
+# tag creation + asset build + publish between them, is the supported escape
+# hatch: see release-please-action's `skip-github-release` and
+# `skip-github-pull-request` inputs.
+#
+#   1. release-please  - creates the draft GitHub Release for the just-merged
+#      release PR. No PR work in this invocation.
 #   2. release-assets  - creates the git tag at the merge commit, runs
 #      goreleaser to build the cross-platform binaries, attaches them to the
 #      still-draft release, then publishes the release (--draft=false).
-#      goreleaser does NOT create its own release (release.disable), so it can
-#      never duplicate release-please's — see .goreleaser.yaml.
+#      goreleaser does NOT create its own release (`release.disable: true` in
+#      .goreleaser.yaml), so it can never duplicate release-please's.
+#   3. release-pr      - now that the tag exists, opens/maintains the *next*
+#      release PR with the correct commit boundary. No release work here.
 #
 # Why draft-first: this repo has GitHub's "Release immutability" enabled, so
-# once a release is published its assets/tags cannot be modified. Building
+# once a release is published its assets/tag cannot be modified. Building
 # everything while the release is still a draft (assets attach fine to
 # drafts), and only then flipping it to published, is GitHub's recommended
 # pattern for immutable releases.
 #
-# Splitting into two jobs means a goreleaser failure never blocks the tag or
-# release record: job 1 always completes, and job 2 can be retried
-# independently until the binaries attach and the release is published.
+# Splitting into three jobs means a goreleaser failure never blocks the tag or
+# release record: job 1 always completes, job 2 can be retried independently
+# until the binaries attach and the release is published, and job 3 only runs
+# after both have settled.
 
 on:
   push:
@@ -36,13 +50,18 @@ concurrency:
 
 jobs:
   release-please:
+    # Release-only invocation: tag any merged release PR as a draft GitHub
+    # Release. Must NOT call createPullRequests() here, because the tag for
+    # the release it just produced does not exist yet (drafts have no tag)
+    # and a same-run createPullRequests() would then open a duplicate PR.
     runs-on: ubuntu-latest
     permissions:
       contents: write # create the draft Release record
-      pull-requests: write # open/maintain the release PR
+      pull-requests: write # comment on / re-label the merged release PR
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
+      release_sha: ${{ steps.release.outputs.sha }}
     steps:
       - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         id: release
@@ -50,10 +69,12 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+          skip-github-pull-request: true
 
   release-assets:
     # Only run when release-please just created a release (i.e. the release PR
-    # was merged). Ordinary pushes to main do nothing here.
+    # was merged). Ordinary pushes to main skip this job, so the PR-only
+    # invocation (release-pr) can still run with the existing tag set.
     needs: release-please
     if: ${{ needs.release-please.outputs.release_created == 'true' }}
     runs-on: ubuntu-latest
@@ -61,22 +82,25 @@ jobs:
       contents: write # create the git tag, upload binaries, publish the release
     env:
       TAG_NAME: ${{ needs.release-please.outputs.tag_name }}
+      RELEASE_SHA: ${{ needs.release-please.outputs.release_sha }}
     steps:
-      # Check out the merge commit that triggered this workflow run. This is
-      # the commit release-please just landed on main, and the target the tag
-      # must point at. fetch-depth: 0 so goreleaser can read full history.
+      # Check out the commit release-please just tagged. Use release-please's
+      # `sha` output (the canonical release commit) rather than github.sha
+      # so that the tag is pinned to exactly the commit release-please
+      # produced, even if a concurrent push has moved the branch ref. Full
+      # history is needed so goreleaser can read tags via `git describe`.
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
-          ref: ${{ github.sha }}
+          ref: ${{ env.RELEASE_SHA }}
           fetch-depth: 0
 
       # release-please created a *draft* release, which means no git tag was
       # created. The tag has to exist in two places before goreleaser runs:
       #   - locally, because goreleaser derives the version from `git describe`
       #     on the checked-out repo (a remote-only tag is invisible to it);
-      #   - remotely, pinned to this exact commit, so the published release
-      #     points at the right SHA rather than relying on publish-time tag
+      #   - remotely, pinned to the release SHA, so the published release
+      #     points at the right commit rather than relying on publish-time tag
       #     creation from a moving branch ref.
       # The remote ref is created via the GitHub API because the checkout used
       # persist-credentials: false, so `git push` has no auth. Both steps are
@@ -85,16 +109,28 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git tag --force "$TAG_NAME" "$GITHUB_SHA"
-          if gh api "repos/${GITHUB_REPOSITORY}/git/refs/tags/${TAG_NAME}" \
-               --jq .object.sha >/dev/null 2>&1; then
-            echo "Remote tag ${TAG_NAME} already exists; leaving it in place."
+          set -euo pipefail
+
+          git tag --force "$TAG_NAME" "$RELEASE_SHA"
+
+          existing_sha="$(
+            gh api "repos/${GITHUB_REPOSITORY}/git/refs/tags/${TAG_NAME}" \
+              --jq '.object.sha' 2>/dev/null || true
+          )"
+
+          if [ -n "$existing_sha" ]; then
+            if [ "$existing_sha" != "$RELEASE_SHA" ]; then
+              echo "::error::Tag ${TAG_NAME} exists at ${existing_sha}, expected ${RELEASE_SHA}"
+              exit 1
+            fi
+
+            echo "Remote tag ${TAG_NAME} already points at ${RELEASE_SHA}; leaving it in place."
           else
             gh api \
               --method POST \
               "repos/${GITHUB_REPOSITORY}/git/refs" \
               -f ref="refs/tags/${TAG_NAME}" \
-              -f sha="${GITHUB_SHA}" \
+              -f sha="${RELEASE_SHA}" \
               --silent
           fi
 
@@ -141,3 +177,33 @@ jobs:
           else
             echo "Release ${TAG_NAME} is already published; nothing to do."
           fi
+
+  release-pr:
+    # PR-only invocation. Runs on every push to main, but only after the
+    # release work (if any) has settled, so that release-please can see the
+    # tag it just produced and compute the correct commit boundary for the
+    # *next* release PR. On ordinary pushes release-assets is skipped and
+    # release-pr simply opens/updates the rolling release PR.
+    needs:
+      - release-please
+      - release-assets
+    if: >-
+      ${{
+        always() &&
+        needs.release-please.result == 'success' &&
+        (
+          needs.release-assets.result == 'success' ||
+          needs.release-assets.result == 'skipped'
+        )
+      }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # push the release branch back to the repo
+      pull-requests: write # open/maintain the release PR
+    steps:
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          skip-github-release: true

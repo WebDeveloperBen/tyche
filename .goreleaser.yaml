@@ -13,10 +13,6 @@ version: 2
 
 project_name: tyche
 
-before:
-  hooks:
-    - go mod tidy
-
 builds:
   - id: tyche
     main: ./cmd/tyche
