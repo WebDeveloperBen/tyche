@@ -5,7 +5,8 @@
       "release-type": "go",
       "package-name": "tyche",
       "include-component-in-tag": false,
-      "changelog-path": "CHANGELOG.md"
+      "changelog-path": "CHANGELOG.md",
+      "draft": true
     }
   }
 }
