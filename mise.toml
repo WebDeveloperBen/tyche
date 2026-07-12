@@ -7,7 +7,7 @@
 # CI installs these same versions via jdx/mise-action, so local and CI agree.
 
 [tools]
-go = "1.26.3"
+go = "1.26.5"
 golangci-lint = "2.12.2"
 gotestsum = "1.13.0"
 actionlint = "1.7.12"

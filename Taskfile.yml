@@ -10,6 +10,7 @@ tasks:
   setup:
     desc: Wire git hooks for a fresh clone (run after `mise install`)
     cmds:
+      - mise install
       - lefthook install
 
   # cmd/api is a local, gitignored dev harness for iterating on the library.
