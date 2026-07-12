@@ -9,6 +9,7 @@
 [tools]
 go = "1.26.5"
 golangci-lint = "2.12.2"
+golangci-lint-langserver = "0.0.12"
 gotestsum = "1.13.0"
 actionlint = "1.7.12"
 "go:golang.org/x/vuln/cmd/govulncheck" = "v1.1.4"
