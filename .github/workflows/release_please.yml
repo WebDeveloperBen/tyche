@@ -70,12 +70,31 @@ jobs:
           fetch-depth: 0
 
       # release-please created a *draft* release, which means no git tag was
-      # created. goreleaser derives the version from the tag at HEAD, so create
-      # the tag here at the merge commit before running it.
+      # created. The tag has to exist in two places before goreleaser runs:
+      #   - locally, because goreleaser derives the version from `git describe`
+      #     on the checked-out repo (a remote-only tag is invisible to it);
+      #   - remotely, pinned to this exact commit, so the published release
+      #     points at the right SHA rather than relying on publish-time tag
+      #     creation from a moving branch ref.
+      # The remote ref is created via the GitHub API because the checkout used
+      # persist-credentials: false, so `git push` has no auth. Both steps are
+      # made idempotent so this job can be safely re-run after a failure.
       - name: Create git tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git tag "$TAG_NAME" "$GITHUB_SHA"
-          git push origin "$TAG_NAME"
+          git tag --force "$TAG_NAME" "$GITHUB_SHA"
+          if gh api "repos/${GITHUB_REPOSITORY}/git/refs/tags/${TAG_NAME}" \
+               --jq .object.sha >/dev/null 2>&1; then
+            echo "Remote tag ${TAG_NAME} already exists; leaving it in place."
+          else
+            gh api \
+              --method POST \
+              "repos/${GITHUB_REPOSITORY}/git/refs" \
+              -f ref="refs/tags/${TAG_NAME}" \
+              -f sha="${GITHUB_SHA}" \
+              --silent
+          fi
 
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
@@ -95,9 +114,15 @@ jobs:
 
       # All assets are attached; flip the release from draft to published.
       # This is the transition that engages immutability — after this runs,
-      # the release's assets and tag can no longer be modified.
+      # the release's assets and tag can no longer be modified. Guard on the
+      # current draft state so a re-run doesn't try to edit an already-published
+      # (now immutable) release.
       - name: Publish draft release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release edit "$TAG_NAME" --draft=false
+          if [ "$(gh release view "$TAG_NAME" --json isDraft --jq .isDraft)" = "true" ]; then
+            gh release edit "$TAG_NAME" --draft=false
+          else
+            echo "Release ${TAG_NAME} is already published; nothing to do."
+          fi
