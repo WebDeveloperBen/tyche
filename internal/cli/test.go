@@ -10,7 +10,7 @@ import (
 // TestCmd is `tyche test`. It runs `go test` against a temporary copy
 // of the project with codecs generated in place.
 type TestCmd struct {
-	Patterns []string `help:"Package patterns to test (default: ./...)." default:""`
+	Patterns []string `arg:"" optional:"" help:"Package patterns to test (default: ./...)."`
 	Verbose  bool     `help:"Run tests in verbose mode (passes -v to go test)." short:"v"`
 }
 
