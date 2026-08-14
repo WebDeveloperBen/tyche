@@ -2,6 +2,8 @@ module github.com/webdeveloperben/tyche
 
 go 1.25.5
 
+toolchain go1.26.6
+
 require (
 	github.com/alecthomas/kong v1.15.0
 	github.com/andybalholm/brotli v1.2.1
