@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.2](https://github.com/WebDeveloperBen/tyche/compare/v1.0.1...v1.0.2) (2026-08-27)
+
+
+### Bug Fixes
+
+* make query, header, and cookie params optional by default ([a535db6](https://github.com/WebDeveloperBen/tyche/commit/a535db6de4dac056c5fafac45b43ceeb32bedca2))
+
 ## [1.0.1](https://github.com/WebDeveloperBen/tyche/compare/v1.0.0...v1.0.1) (2026-08-27)
 
 
