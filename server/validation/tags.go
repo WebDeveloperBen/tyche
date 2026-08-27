@@ -7,6 +7,11 @@ import (
 	"strings"
 )
 
+// FieldRequired reports whether a bound field must be present in the request.
+// Query, header, and cookie parameters are optional unless marked
+// required:"true" or validate:"required" (matching OpenAPI's default for
+// non-path parameters). Body, form, and file fields are required unless the
+// field is a pointer or opts out via omitempty / required:"false".
 func FieldRequired(f reflect.StructField, tagKey string) bool {
 	if required, ok := requiredOverride(f); ok {
 		return required
@@ -20,10 +25,17 @@ func FieldRequired(f reflect.StructField, tagKey string) bool {
 			return false
 		}
 	}
+	if isOptionalParamSource(tagKey) {
+		return false
+	}
 	if tagKey == "file" && isMultipartFileHeader(f.Type) {
 		return !HasTagOption(f.Tag.Get(tagKey), "omitempty")
 	}
 	return FieldRequiredFromTag(f.Tag.Get(tagKey), f.Type)
+}
+
+func isOptionalParamSource(tagKey string) bool {
+	return tagKey == "query" || tagKey == "header" || tagKey == "cookie"
 }
 
 func FieldRequiredFromTag(tag string, typ reflect.Type) bool {

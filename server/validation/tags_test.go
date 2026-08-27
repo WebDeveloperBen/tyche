@@ -84,19 +84,26 @@ func TestHasTagOption(t *testing.T) {
 
 func TestFieldRequired(t *testing.T) {
 	type S struct {
-		QueryOpt  *string               `query:"page"`
-		JSONOpt   *string               `json:"bio"`
-		ExplTrue  *string               `json:"et" required:"true"`
-		FileFalse *multipart.FileHeader `file:"avatar" required:"false"`
-		FileOmit  *multipart.FileHeader `file:"avatar,omitempty"`
-		File      *multipart.FileHeader `file:"avatar"`
-		JSONReq   string                `json:"name"`
-		JSONOmit  string                `json:"role,omitempty"`
-		ValidOmit string                `json:"tag" validate:"omitempty"`
-		ExplFalse string                `json:"ef" required:"false"`
-		QueryOmit string                `query:"limit,omitempty"`
-		QueryReq  string                `query:"q" required:"true"`
-		PathID    string                `path:"id"`
+		QueryOpt   *string               `query:"page"`
+		JSONOpt    *string               `json:"bio"`
+		ExplTrue   *string               `json:"et" required:"true"`
+		FileFalse  *multipart.FileHeader `file:"avatar" required:"false"`
+		FileOmit   *multipart.FileHeader `file:"avatar,omitempty"`
+		File       *multipart.FileHeader `file:"avatar"`
+		JSONReq    string                `json:"name"`
+		JSONOmit   string                `json:"role,omitempty"`
+		ValidOmit  string                `json:"tag" validate:"omitempty"`
+		ExplFalse  string                `json:"ef" required:"false"`
+		QueryBare  string                `query:"from"`
+		QueryOmit  string                `query:"limit,omitempty"`
+		QueryReq   string                `query:"q" required:"true"`
+		QueryValid string                `query:"cursor" validate:"required"`
+		HeaderBare string                `header:"X-Request-Id"`
+		HeaderReq  string                `header:"X-Api-Key" required:"true"`
+		CookieBare string                `cookie:"session"`
+		CookieReq  string                `cookie:"csrf" validate:"required"`
+		FormBare   string                `form:"title"`
+		PathID     string                `path:"id"`
 	}
 	typ := reflect.TypeFor[S]()
 
@@ -106,9 +113,16 @@ func TestFieldRequired(t *testing.T) {
 		want   bool
 	}{
 		{"PathID", "path", true},
-		{"QueryReq", "query", true},
+		{"QueryBare", "query", false}, // params are optional by default
+		{"QueryReq", "query", true},   // required:"true" opts in
+		{"QueryValid", "query", true}, // validate:"required" opts in
 		{"QueryOpt", "query", false},  // pointer
 		{"QueryOmit", "query", false}, // omitempty option
+		{"HeaderBare", "header", false},
+		{"HeaderReq", "header", true},
+		{"CookieBare", "cookie", false},
+		{"CookieReq", "cookie", true},
+		{"FormBare", "form", true}, // form fields stay required by default
 		{"JSONReq", "json", true},
 		{"JSONOpt", "json", false},   // pointer
 		{"JSONOmit", "json", false},  // omitempty option

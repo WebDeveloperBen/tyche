@@ -277,6 +277,14 @@ tyche does **not** ship chi/gin/fiber adapters — that would bind the module to
 
 Register a handler as `func(ctx, *In) (*Out, error)`. Input fields are bound from `path`, `query`, `header`, and `cookie` tags plus either a JSON body (`Body` field, `body` tag, or JSON-tagged fields) or a multipart form body (`form`, `file`, and `files` tags). Output fields map to a JSON body, response headers, and status.
 
+**Required vs optional.** Parameters follow OpenAPI's defaults: `query`, `header`, and `cookie` fields are optional (absent values bind the zero value), while body fields are required so a client omitting a payload field gets a 400 instead of a silent zero value. Missing required fields render as problem+json validation errors.
+
+| Source | Default | Override |
+| --- | --- | --- |
+| `path` | required | — |
+| `query`, `header`, `cookie` | optional | `required:"true"` or `validate:"required"` |
+| JSON body, `form`, `file`, `files` | required | pointer type, `,omitempty` tag option, `required:"false"`, or `validate:"omitempty"` |
+
 By default this runs through a reflection binder — no codegen step, so iterating with `go run` is friction-free. `tyche generate` then inspects each `server.Register(...)` call and emits a codec (`zz_server_routes_gen.go`) that does the binding, validation, and serialization with hand-written byte-level code and **no runtime reflection** — conceptually the same trade `sqlc` makes for SQL. The generated codec is registered in an `init()` and picked up automatically; when present it replaces the reflection path for that route. Both paths produce byte-identical responses, so codegen is a pure performance optimization you reach for in production, not a prerequisite.
 
 Multipart routes are supported by both the reflection binder and generated server codecs. Generated multipart codecs use the same form/file semantics as the runtime binder.

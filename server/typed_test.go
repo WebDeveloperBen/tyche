@@ -321,6 +321,37 @@ func TestParseRequest_Validation(t *testing.T) {
 		}
 	})
 
+	t.Run("bare params are optional by default", func(t *testing.T) {
+		type input struct {
+			From    string `query:"from"`
+			Page    int    `query:"page"`
+			Trace   string `header:"X-Trace-Id"`
+			Session string `cookie:"session"`
+		}
+		req := httptest.NewRequest(http.MethodGet, "/search", nil)
+
+		parsed, err := server.ParseRequest[input](req)
+		if err != nil {
+			t.Fatalf("expected bare query/header/cookie params to be optional, got %v", err)
+		}
+		if parsed.From != "" || parsed.Page != 0 || parsed.Trace != "" || parsed.Session != "" {
+			t.Fatalf("expected zero values for absent params, got %#v", parsed)
+		}
+	})
+
+	t.Run("validate required query", func(t *testing.T) {
+		type input struct {
+			Cursor string `query:"cursor" validate:"required"`
+		}
+		req := httptest.NewRequest(http.MethodGet, "/search", nil)
+
+		_, err := server.ParseRequest[input](req)
+		var validationErr *validation.Error
+		if err == nil || !errors.As(err, &validationErr) || len(validationErr.Problems) != 1 || validationErr.Problems[0].Pointer != "/query/cursor" {
+			t.Fatalf("expected validation error for /query/cursor, got %v", err)
+		}
+	})
+
 	t.Run("case insensitive header", func(t *testing.T) {
 		type input struct {
 			Token string `header:"x-api-key"`

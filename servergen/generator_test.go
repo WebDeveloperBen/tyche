@@ -357,4 +357,17 @@ func TestGeneratedMultipartRoute(t *testing.T) {
 		t.Fatalf("expected generated multipart route to return ok=true, got %s", rec.Body.String())
 	}
 }
+
+func TestGeneratedBareParamsAreOptional(t *testing.T) {
+	api := server.NewAPI(server.NewServeMuxAdapter())
+	RegisterTypedRoutes(api.Group(""))
+
+	req := httptest.NewRequest(http.MethodGet, QueryHeaderPath, nil)
+	rec := httptest.NewRecorder()
+	api.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected bare query/header params to be optional, status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+}
 `

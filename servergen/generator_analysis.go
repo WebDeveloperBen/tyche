@@ -461,6 +461,12 @@ func requiredForTag(tag reflect.StructTag, source string, t types.Type) bool {
 		}
 	}
 
+	// Query, header, and cookie parameters are optional unless explicitly
+	// marked required — must stay in sync with validation.FieldRequired.
+	if source == "query" || source == "header" || source == "cookie" {
+		return false
+	}
+
 	raw := tag.Get(source)
 	parts := strings.Split(raw, ",")
 	if slices.Contains(parts[1:], "omitempty") {
