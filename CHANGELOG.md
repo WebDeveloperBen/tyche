@@ -1,29 +1,5 @@
 # Changelog
 
-## [1.0.0](https://github.com/WebDeveloperBen/tyche/compare/v1.0.0...v1.0.0) (2026-08-27)
-
-
-### Bug Fixes
-
-* go vulncheck by bumping std lib version ([cecf8f8](https://github.com/WebDeveloperBen/tyche/commit/cecf8f8ff4412cd095a96e9eec94a3e2173e8f75))
-* tyche test command ([5dd7a01](https://github.com/WebDeveloperBen/tyche/commit/5dd7a01b4e0d6ad267e3ab3f55adc94051a30c3c))
-
-## [1.0.0](https://github.com/WebDeveloperBen/tyche/compare/v1.0.0...v1.0.0) (2026-08-14)
-
-
-### Bug Fixes
-
-* go vulncheck by bumping std lib version ([cecf8f8](https://github.com/WebDeveloperBen/tyche/commit/cecf8f8ff4412cd095a96e9eec94a3e2173e8f75))
-* tyche test command ([5dd7a01](https://github.com/WebDeveloperBen/tyche/commit/5dd7a01b4e0d6ad267e3ab3f55adc94051a30c3c))
-
-## [1.0.0](https://github.com/WebDeveloperBen/tyche/compare/v1.0.0...v1.0.0) (2026-08-14)
-
-
-### Bug Fixes
-
-* go vulncheck by bumping std lib version ([cecf8f8](https://github.com/WebDeveloperBen/tyche/commit/cecf8f8ff4412cd095a96e9eec94a3e2173e8f75))
-* tyche test command ([5dd7a01](https://github.com/WebDeveloperBen/tyche/commit/5dd7a01b4e0d6ad267e3ab3f55adc94051a30c3c))
-
 ## 1.0.0 (2026-07-12)
 
 
