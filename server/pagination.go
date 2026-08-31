@@ -3,11 +3,13 @@ package server
 import (
 	"net/http"
 	"reflect"
+	"sync"
 
 	"github.com/webdeveloperben/tyche/pagination"
 )
 
 var paginationParamsType = reflect.TypeFor[pagination.Params]()
+var paginationBindingsCache sync.Map
 
 type paginationBinding struct {
 	index []int
@@ -46,9 +48,14 @@ func parseWithPaginationPolicy[I any](req *http.Request, parse func(*http.Reques
 }
 
 func paginationBindings(inputType reflect.Type) []paginationBinding {
+	inputType = indirectReflectType(inputType)
+	if cached, ok := paginationBindingsCache.Load(inputType); ok {
+		return cached.([]paginationBinding)
+	}
 	var bindings []paginationBinding
 	collectPaginationBindings(inputType, nil, make(map[reflect.Type]bool), &bindings)
-	return bindings
+	actual, _ := paginationBindingsCache.LoadOrStore(inputType, bindings)
+	return actual.([]paginationBinding)
 }
 
 func collectPaginationBindings(inputType reflect.Type, prefix []int, active map[reflect.Type]bool, bindings *[]paginationBinding) {
