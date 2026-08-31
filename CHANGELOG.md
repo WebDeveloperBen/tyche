@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/WebDeveloperBen/tyche/compare/v1.0.2...v1.1.0) (2026-08-31)
+
+
+### Features
+
+* add pagination and embedded input fields ([#34](https://github.com/WebDeveloperBen/tyche/issues/34)) ([5d5a49d](https://github.com/WebDeveloperBen/tyche/commit/5d5a49d8818ae1d58963cc5d7ad1e6931ea360c4))
+
 ## [1.0.2](https://github.com/WebDeveloperBen/tyche/compare/v1.0.1...v1.0.2) (2026-08-27)
 
 
