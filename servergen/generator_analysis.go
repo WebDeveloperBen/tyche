@@ -1,6 +1,7 @@
 package servergen
 
 import (
+	"fmt"
 	"go/types"
 	"net/http"
 	"reflect"
@@ -18,7 +19,7 @@ func tagName(tag string) string {
 	return strings.Split(tag, ",")[0]
 }
 
-func analyseInputType(t types.Type) InputBindSpec {
+func analyseInputType(t types.Type) (InputBindSpec, error) {
 	spec := InputBindSpec{Manual: true}
 	named, ok := t.(*types.Named)
 	if ok {
@@ -26,44 +27,71 @@ func analyseInputType(t types.Type) InputBindSpec {
 	}
 	strct, ok := t.(*types.Struct)
 	if !ok {
-		return InputBindSpec{}
+		return InputBindSpec{}, nil
 	}
+	seen := make(map[string]struct{})
+	if ok, err := analyseInputFields(strct, "", &spec, seen, true); err != nil {
+		return InputBindSpec{}, err
+	} else if !ok {
+		return InputBindSpec{}, nil
+	}
+	return spec, nil
+}
 
-	for i := 0; i < strct.NumFields(); i++ {
+func analyseInputFields(strct *types.Struct, prefix string, spec *InputBindSpec, seen map[string]struct{}, topLevel bool) (bool, error) {
+	for i := range strct.NumFields() {
 		field := strct.Field(i)
 		if !field.Exported() {
 			continue
 		}
 		tag := reflect.StructTag(strct.Tag(i))
+		if !topLevel && (tag.Get("body") != "" || field.Name() == "Body" || tag.Get("json") != "") {
+			return false, nil
+		}
+		if nested := anonymousStructType(field, tag); nested != nil {
+			if _, ok := field.Type().(*types.Pointer); ok {
+				return false, nil
+			}
+			if ok, err := analyseInputFields(nested, prefix+field.Name()+".", spec, seen, false); err != nil || !ok {
+				return ok, err
+			}
+			continue
+		}
+
 		switch {
 		case tag.Get("body") != "" || field.Name() == "Body":
 			bodySpec, ok := analyseBodyStruct(field.Type(), "in."+field.Name()+".", fieldRequiredForJSONTag(tag, field.Type()))
 			if !ok {
 				bodySpec, ok = analyseDirectBodyType(field.Type(), "in."+field.Name(), fieldRequiredForJSONTag(tag, field.Type()), tag)
 				if !ok {
-					return InputBindSpec{}
+					return false, nil
 				}
 			}
 			bodySpec.DecodeTarget = "in." + field.Name()
 			spec.Body = bodySpec
 		case tag.Get("json") != "":
-			bodySpec, ok := analyseBodyStruct(t, "in.", hasRequiredJSONFieldsForTypesStruct(strct))
+			bodySpec, ok := analyseBodyStruct(strct, "in.", hasRequiredJSONFieldsForTypesStruct(strct))
 			if !ok {
-				return InputBindSpec{}
+				return false, nil
 			}
 			spec.Body = bodySpec
 			spec.Body.Target = "in."
 			spec.Body.DecodeTarget = "in"
-			return spec
+			return true, nil
 		}
 
 		source, name := fieldSource(tag)
 		if source == "" {
 			continue
 		}
+		key := source + ":" + name
+		if _, exists := seen[key]; exists {
+			return false, fmt.Errorf("duplicate parameter %q in %s", name, source)
+		}
+		seen[key] = struct{}{}
 
 		fieldSpec := BindFieldSpec{
-			FieldName: field.Name(),
+			FieldName: prefix + field.Name(),
 			ParamName: name,
 			Source:    source,
 			Required:  requiredForTag(tag, source, field.Type()),
@@ -72,23 +100,23 @@ func analyseInputType(t types.Type) InputBindSpec {
 		switch source {
 		case "file":
 			if !isMultipartFileHeader(field.Type()) {
-				return InputBindSpec{}
+				return false, nil
 			}
 			fieldSpec.Kind = "file"
 		case "files":
 			if !isMultipartFileHeaderSlice(field.Type()) {
-				return InputBindSpec{}
+				return false, nil
 			}
 			fieldSpec.Kind = "files"
 			fieldSpec.Slice = true
 		case "form":
 			if elem, ok := sliceElementType(field.Type()); ok {
 				if len(fieldSpec.Rules.ItemRules) > 0 {
-					return InputBindSpec{}
+					return false, nil
 				}
 				elemTypeExpr, elemKind, elemPtr, ok := supportedScalar(elem)
 				if !ok {
-					return InputBindSpec{}
+					return false, nil
 				}
 				fieldSpec.TypeExpr = types.TypeString(field.Type(), nil)
 				fieldSpec.Kind = elemKind
@@ -99,7 +127,7 @@ func analyseInputType(t types.Type) InputBindSpec {
 			} else {
 				typeExpr, kind, pointer, ok := supportedScalar(field.Type())
 				if !ok {
-					return InputBindSpec{}
+					return false, nil
 				}
 				fieldSpec.TypeExpr = typeExpr
 				fieldSpec.Kind = kind
@@ -108,17 +136,33 @@ func analyseInputType(t types.Type) InputBindSpec {
 		default:
 			typeExpr, kind, pointer, ok := supportedScalar(field.Type())
 			if !ok {
-				return InputBindSpec{}
+				return false, nil
 			}
 			fieldSpec.TypeExpr = typeExpr
 			fieldSpec.Kind = kind
 			fieldSpec.Pointer = pointer
 		}
-
 		spec.Fields = append(spec.Fields, fieldSpec)
 	}
+	return true, nil
+}
 
-	return spec
+func anonymousStructType(field *types.Var, tag reflect.StructTag) *types.Struct {
+	if !field.Embedded() || tag.Get("path") != "" || tag.Get("query") != "" ||
+		tag.Get("header") != "" || tag.Get("cookie") != "" || tag.Get("form") != "" ||
+		tag.Get("file") != "" || tag.Get("files") != "" || tag.Get("body") != "" ||
+		tag.Get("json") != "" || field.Name() == "Body" {
+		return nil
+	}
+	t := field.Type()
+	if ptr, ok := t.(*types.Pointer); ok {
+		t = ptr.Elem()
+	}
+	if named, ok := t.(*types.Named); ok {
+		t = named.Underlying()
+	}
+	strct, _ := t.(*types.Struct)
+	return strct
 }
 
 func analyseDirectBodyType(t types.Type, target string, required bool, tag reflect.StructTag) (*BodyBindSpec, bool) {

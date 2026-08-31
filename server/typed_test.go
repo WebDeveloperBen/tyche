@@ -12,11 +12,21 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/webdeveloperben/tyche/pagination"
 	"github.com/webdeveloperben/tyche/server"
 	"github.com/webdeveloperben/tyche/server/apidocs"
 	"github.com/webdeveloperben/tyche/server/validation"
 )
 
+type embeddedListInput struct {
+	TenantID string `path:"tenant_id"`
+	pagination.Params
+}
+
+type duplicatePaginationInput struct {
+	pagination.Params
+	Limit int `query:"limit"`
+}
 type getUserInput struct {
 	ID string `path:"id" doc:"User ID"`
 }
@@ -1252,5 +1262,111 @@ func TestNewRouter_UsesOpenAPIConfig(t *testing.T) {
 	}
 	if doc.Info.Version != "2026.04" {
 		t.Fatalf("expected configured version, got %q", doc.Info.Version)
+	}
+}
+
+func TestEmbeddedInputFieldsBindAndDocument(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/tenants/acme?limit=25&cursor=opaque", nil)
+	req.SetPathValue("tenant_id", "acme")
+	input, err := server.ParseRequest[embeddedListInput](req)
+	if err != nil {
+		t.Fatalf("ParseRequest: %v", err)
+	}
+	if input.TenantID != "acme" || input.Limit != 25 || input.Cursor != "opaque" {
+		t.Fatalf("input = %#v, want flattened path and query fields", input)
+	}
+
+	router := server.NewAPI(server.NewServeMuxAdapter())
+	if err := server.RegisterE(router, server.Operation{
+		OperationID: "embedded-list",
+		Method:      http.MethodGet,
+		Path:        "/tenants/:tenant_id",
+	}, func(_ context.Context, input *embeddedListInput) (*getUserOutput, error) {
+		return &getUserOutput{Name: input.TenantID}, nil
+	}); err != nil {
+		t.Fatalf("RegisterE: %v", err)
+	}
+	op := router.OpenAPI().Paths["/tenants/{tenant_id}"].GET
+	if op == nil || len(op.Parameters) != 3 {
+		t.Fatalf("parameters = %#v, want tenant_id, limit, cursor", op)
+	}
+	for _, parameter := range op.Parameters {
+		if parameter == nil {
+			continue
+		}
+		if parameter.Name == "limit" && parameter.In == "query" {
+			return
+		}
+	}
+	t.Fatal("OpenAPI missing flattened limit parameter")
+}
+
+func TestEmbeddedInputDuplicateParameterRejected(t *testing.T) {
+	router := server.NewAPI(server.NewServeMuxAdapter())
+	err := server.RegisterE(router, server.Operation{
+		OperationID: "duplicate-pagination",
+		Method:      http.MethodGet,
+		Path:        "/duplicates",
+	}, func(_ context.Context, _ *duplicatePaginationInput) (*getUserOutput, error) {
+		return &getUserOutput{}, nil
+	})
+	if err == nil || !strings.Contains(err.Error(), `duplicate parameter "limit"`) {
+		t.Fatalf("RegisterE error = %v, want duplicate limit error", err)
+	}
+}
+
+func TestPaginationPolicyAppliesToTypedRoutes(t *testing.T) {
+	router := server.NewAPI(server.NewServeMuxAdapter())
+	var got pagination.Params
+	if err := server.RegisterE(router, server.Operation{
+		OperationID: "configured-pagination",
+		Method:      http.MethodGet,
+		Path:        "/configured-pagination/:tenant_id",
+	}, func(_ context.Context, input *embeddedListInput) (*getUserOutput, error) {
+		got = input.Params
+		return &getUserOutput{}, nil
+	}, server.WithPaginationConfig(pagination.Config{DefaultLimit: 5, MaxLimit: 10})); err != nil {
+		t.Fatalf("RegisterE: %v", err)
+	}
+
+	tests := []struct {
+		name       string
+		query      string
+		wantStatus int
+		wantLimit  int
+	}{
+		{name: "default", wantStatus: http.StatusOK, wantLimit: 5},
+		{name: "configured limit", query: "?limit=10", wantStatus: http.StatusOK, wantLimit: 10},
+		{name: "over maximum", query: "?limit=11", wantStatus: http.StatusBadRequest},
+		{name: "invalid integer", query: "?limit=nope", wantStatus: http.StatusBadRequest},
+		{name: "duplicate limit", query: "?limit=5&limit=6", wantStatus: http.StatusBadRequest},
+		{name: "duplicate cursor", query: "?cursor=one&cursor=two", wantStatus: http.StatusBadRequest},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/configured-pagination/acme"+test.query, nil)
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, req)
+			if response.Code != test.wantStatus {
+				t.Fatalf("status = %d, body = %s; want %d", response.Code, response.Body.String(), test.wantStatus)
+			}
+			if response.Code == http.StatusOK && got.Limit != test.wantLimit {
+				t.Fatalf("limit = %d, want %d", got.Limit, test.wantLimit)
+			}
+		})
+	}
+}
+
+func TestPaginationPolicyRejectsInvalidConfig(t *testing.T) {
+	router := server.NewAPI(server.NewServeMuxAdapter())
+	err := server.RegisterE(router, server.Operation{
+		OperationID: "invalid-pagination-config",
+		Method:      http.MethodGet,
+		Path:        "/invalid-pagination-config/:tenant_id",
+	}, func(_ context.Context, _ *embeddedListInput) (*getUserOutput, error) {
+		return &getUserOutput{}, nil
+	}, server.WithPaginationConfig(pagination.Config{DefaultLimit: 11, MaxLimit: 10}))
+	if err == nil || !strings.Contains(err.Error(), "invalid pagination config") {
+		t.Fatalf("RegisterE error = %v, want invalid pagination config", err)
 	}
 }

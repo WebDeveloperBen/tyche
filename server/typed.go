@@ -16,6 +16,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/webdeveloperben/tyche/pagination"
 	"github.com/webdeveloperben/tyche/server/openapi"
 	"github.com/webdeveloperben/tyche/server/validation"
 )
@@ -70,6 +71,9 @@ func RegisterE[I, O any](grp RouteTarget, op Operation, handler TypedHandler[I, 
 
 	inputType := reflect.TypeFor[I]()
 	outputType := reflect.TypeFor[O]()
+	if _, err := validation.FlattenFields(inputType); err != nil {
+		return fmt.Errorf("invalid input binding for %s: %w", validation.IndirectType(inputType), err)
+	}
 	if !op.SkipValidateRequest {
 		if _, err := validation.Struct(inputType); err != nil {
 			return fmt.Errorf("invalid input validation for %s: %w", validation.IndirectType(inputType), err)
@@ -96,8 +100,10 @@ func RegisterE[I, O any](grp RouteTarget, op Operation, handler TypedHandler[I, 
 	if op.DefaultStatus != 0 && outputSpec.defaultStatus == http.StatusOK {
 		outputSpec.defaultStatus = op.DefaultStatus
 	}
-
 	ro := resolveRouteOptions(opts)
+	if err := validatePaginationConfig(inputType, ro.paginationConfig); err != nil {
+		return fmt.Errorf("invalid pagination config: %w", err)
+	}
 	apiCodecs := grp.apiCodecs()
 	requestCodecs, err := codecsForMediaTypes(apiCodecs, ro.requestContentTypes)
 	if err != nil {
@@ -119,7 +125,7 @@ func RegisterE[I, O any](grp RouteTarget, op Operation, handler TypedHandler[I, 
 		// optimization for production — run servergen to get them.
 		codec = GeneratedRouteCodec{
 			Parse: func(req *http.Request) (any, error) {
-				in, err := parseRequestWithCodecs[I](req, requestCodecs)
+				in, err := parseRequestWithCodecsUnenforced[I](req, requestCodecs)
 				if err != nil {
 					return nil, err
 				}
@@ -134,6 +140,12 @@ func RegisterE[I, O any](grp RouteTarget, op Operation, handler TypedHandler[I, 
 	if codec.ParseWithCodecs != nil {
 		parse = func(req *http.Request) (any, error) {
 			return codec.ParseWithCodecs(req, requestCodecs)
+		}
+	}
+	if parse != nil {
+		baseParse := parse
+		parse = func(req *http.Request) (any, error) {
+			return parseWithPaginationPolicy[I](req, baseParse, ro.paginationConfig)
 		}
 	}
 	write := codec.Write
@@ -176,11 +188,13 @@ func RegisterE[I, O any](grp RouteTarget, op Operation, handler TypedHandler[I, 
 	if err := grp.handleRoute(op.Method, op.Path, httpHandler, ro); err != nil {
 		return err
 	}
-	registerOpenAPIOperation(grp, op, inputType, outputType, outputSpec, requestCodecs, responseCodecs)
+	if err := registerOpenAPIOperation(grp, op, inputType, outputType, outputSpec, requestCodecs, responseCodecs); err != nil {
+		return err
+	}
 	return nil
 }
 
-func registerOpenAPIOperation(grp RouteTarget, op Operation, inputType, outputType reflect.Type, outputSpec *outputSpec, requestCodecs, responseCodecs []Codec) {
+func registerOpenAPIOperation(grp RouteTarget, op Operation, inputType, outputType reflect.Type, outputSpec *outputSpec, requestCodecs, responseCodecs []Codec) error {
 	doc := grp.apiDoc()
 	registry := grp.apiSchemaRegistry()
 
@@ -193,12 +207,16 @@ func registerOpenAPIOperation(grp RouteTarget, op Operation, inputType, outputTy
 		Description: op.Description,
 		OperationID: op.OperationID,
 		Tags:        op.Tags,
-		Parameters:  extractParameters(inputType, registry),
-		RequestBody: extractRequestBody(inputType, registry, requestCodecs),
-		Responses:   extractResponses(outputSpec, registry, responseCodecs),
-		Deprecated:  op.Deprecated,
-		Security:    normalizeSecurityRequirements(op.Security),
 	}
+	params, err := extractParameters(inputType, registry)
+	if err != nil {
+		return err
+	}
+	docOp.Parameters = params
+	docOp.RequestBody = extractRequestBody(inputType, registry, requestCodecs)
+	docOp.Responses = extractResponses(outputSpec, registry, responseCodecs)
+	docOp.Deprecated = op.Deprecated
+	docOp.Security = normalizeSecurityRequirements(op.Security)
 
 	doc.AddOperation(op.Method, openAPIPath, docOp)
 
@@ -229,23 +247,18 @@ func registerOpenAPIOperation(grp RouteTarget, op Operation, inputType, outputTy
 		OutputType:  outputType,
 	})
 	grp.invalidateOpenAPI()
+	return nil
 }
 
-func extractParameters(t reflect.Type, registry *openapi.Registry) []*openapi.Parameter {
-	t = validation.IndirectType(t)
-	if t.Kind() != reflect.Struct {
-		return nil
+func extractParameters(t reflect.Type, registry *openapi.Registry) ([]*openapi.Parameter, error) {
+	fields, err := validation.FlattenFields(t)
+	if err != nil {
+		return nil, err
 	}
 
-	params := make([]*openapi.Parameter, 0)
-	seen := make(map[string]bool)
-
-	for i := 0; i < t.NumField(); i++ {
-		f := t.Field(i)
-		if !f.IsExported() {
-			continue
-		}
-
+	params := make([]*openapi.Parameter, 0, len(fields))
+	for _, flattened := range fields {
+		f := flattened.Field
 		var param *openapi.Parameter
 
 		switch {
@@ -258,23 +271,15 @@ func extractParameters(t reflect.Type, registry *openapi.Registry) []*openapi.Pa
 		case f.Tag.Get("cookie") != "":
 			param = &openapi.Parameter{Name: validation.TagName(f.Tag.Get("cookie")), In: "cookie", Required: validation.FieldRequired(f, "cookie")}
 		}
-
 		if param == nil {
-			continue
-		}
-
-		key := param.In + ":" + param.Name
-		if seen[key] {
 			continue
 		}
 
 		param.Schema = openapi.CloneSchema(registry.Schema(f.Type))
 		openapi.ApplyFieldSchemaMetadata(param.Schema, f)
 		params = append(params, param)
-		seen[key] = true
 	}
-
-	return params
+	return params, nil
 }
 
 func extractRequestBody(t reflect.Type, registry *openapi.Registry, codecs []Codec) *openapi.RequestBody {
@@ -362,7 +367,24 @@ func ParseRequestWithCodecs[I any](req *http.Request, codecs []Codec) (*I, error
 }
 
 func parseRequestWithCodecs[I any](req *http.Request, codecs []Codec) (*I, error) {
+	return parseRequestWithPaginationConfig[I](req, codecs, pagination.DefaultConfig())
+}
+
+func parseRequestWithPaginationConfig[I any](req *http.Request, codecs []Codec, config pagination.Config) (*I, error) {
+	value, err := parseWithPaginationPolicy[I](req, func(req *http.Request) (any, error) {
+		return parseRequestWithCodecsUnenforced[I](req, codecs)
+	}, config)
+	if err != nil {
+		return nil, err
+	}
+	return value.(*I), nil
+}
+
+func parseRequestWithCodecsUnenforced[I any](req *http.Request, codecs []Codec) (*I, error) {
 	spec := getInputSpec[I]()
+	if spec.err != nil {
+		return nil, spec.err
+	}
 	value := reflect.New(spec.typ)
 	target := value.Elem()
 	validationErr := &validation.Error{}
@@ -380,7 +402,7 @@ func parseRequestWithCodecs[I any](req *http.Request, codecs []Codec) (*I, error
 				continue
 			}
 			if binding.setFile != nil {
-				if err := binding.setFile(target.Field(binding.index), file); err != nil {
+				if err := binding.setFile(fieldByIndex(target, binding.index), file); err != nil {
 					validationErr.AddInvalidType(validation.JSONPointer(binding.source, binding.name))
 				}
 			}
@@ -396,7 +418,7 @@ func parseRequestWithCodecs[I any](req *http.Request, codecs []Codec) (*I, error
 				continue
 			}
 			if binding.setFiles != nil {
-				if err := binding.setFiles(target.Field(binding.index), files); err != nil {
+				if err := binding.setFiles(fieldByIndex(target, binding.index), files); err != nil {
 					validationErr.AddInvalidType(validation.JSONPointer(binding.source, binding.name))
 				}
 			}
@@ -412,7 +434,7 @@ func parseRequestWithCodecs[I any](req *http.Request, codecs []Codec) (*I, error
 				continue
 			}
 			if binding.setSlice != nil {
-				if err := binding.setSlice(target.Field(binding.index), values); err != nil {
+				if err := binding.setSlice(fieldByIndex(target, binding.index), values); err != nil {
 					validationErr.AddInvalidType(validation.JSONPointer(binding.source, binding.name))
 				}
 			}
@@ -428,7 +450,7 @@ func parseRequestWithCodecs[I any](req *http.Request, codecs []Codec) (*I, error
 				continue
 			}
 
-			if err := binding.set(target.Field(binding.index), raw); err != nil {
+			if err := binding.set(fieldByIndex(target, binding.index), raw); err != nil {
 				validationErr.AddInvalidType(validation.JSONPointer(binding.source, binding.name))
 			}
 		}
@@ -523,7 +545,7 @@ type inputBinding struct {
 	name      string
 	location  string
 	source    string
-	index     int
+	index     []int
 	required  bool
 }
 
@@ -547,9 +569,10 @@ type inputSpec struct {
 	validationSpec     atomic.Pointer[validation.StructSpec]
 	bindings           []inputBinding
 	requiredBodyFields []RequiredJSONField
-	bodyIndex          int
+	bodyIndex          []int
 	bodyMode           bodyBindingMode
 	bodyRequired       bool
+	err                error
 }
 
 const multipartMaxMemory = 32 << 20
@@ -569,26 +592,27 @@ func getInputSpec[I any]() *inputSpec {
 func inputSpecForType(t reflect.Type) *inputSpec {
 	t = validation.IndirectType(t)
 	spec := &inputSpec{
-		typ:       t,
-		bindings:  make([]inputBinding, 0, max(0, t.NumField())),
-		bodyIndex: -1,
+		typ:      t,
+		bindings: make([]inputBinding, 0, max(0, t.NumField())),
 	}
 
 	if t.Kind() != reflect.Struct {
 		return spec
 	}
-
-	for i := 0; i < t.NumField(); i++ {
-		f := t.Field(i)
-		if !f.IsExported() {
-			continue
-		}
+	fields, err := validation.FlattenFields(t)
+	if err != nil {
+		spec.err = err
+		return spec
+	}
+	for _, flattened := range fields {
+		f := flattened.Field
+		index := flattened.Index
 
 		switch {
 		case f.Tag.Get("path") != "":
 			name := validation.TagName(f.Tag.Get("path"))
 			spec.bindings = append(spec.bindings, inputBinding{
-				index:    i,
+				index:    index,
 				name:     name,
 				location: "path parameter",
 				source:   "path",
@@ -606,7 +630,7 @@ func inputSpecForType(t reflect.Type) *inputSpec {
 			ft := validation.IndirectType(f.Type)
 			if ft.Kind() == reflect.Slice && ft.Elem().Kind() == reflect.String {
 				spec.bindings = append(spec.bindings, inputBinding{
-					index:    i,
+					index:    index,
 					name:     name,
 					location: "query parameter",
 					source:   "query",
@@ -624,7 +648,7 @@ func inputSpecForType(t reflect.Type) *inputSpec {
 				})
 			} else {
 				spec.bindings = append(spec.bindings, inputBinding{
-					index:    i,
+					index:    index,
 					name:     name,
 					location: "query parameter",
 					source:   "query",
@@ -642,7 +666,7 @@ func inputSpecForType(t reflect.Type) *inputSpec {
 		case f.Tag.Get("header") != "":
 			name := validation.TagName(f.Tag.Get("header"))
 			spec.bindings = append(spec.bindings, inputBinding{
-				index:    i,
+				index:    index,
 				name:     name,
 				location: "header",
 				source:   "header",
@@ -659,7 +683,7 @@ func inputSpecForType(t reflect.Type) *inputSpec {
 		case f.Tag.Get("cookie") != "":
 			name := validation.TagName(f.Tag.Get("cookie"))
 			spec.bindings = append(spec.bindings, inputBinding{
-				index:    i,
+				index:    index,
 				name:     name,
 				location: "cookie",
 				source:   "cookie",
@@ -682,7 +706,7 @@ func inputSpecForType(t reflect.Type) *inputSpec {
 			ft := validation.IndirectType(f.Type)
 			if ft.Kind() == reflect.Slice {
 				spec.bindings = append(spec.bindings, inputBinding{
-					index:    i,
+					index:    index,
 					name:     name,
 					location: "form field",
 					source:   "form",
@@ -704,7 +728,7 @@ func inputSpecForType(t reflect.Type) *inputSpec {
 				})
 			} else {
 				spec.bindings = append(spec.bindings, inputBinding{
-					index:    i,
+					index:    index,
 					name:     name,
 					location: "form field",
 					source:   "form",
@@ -729,7 +753,7 @@ func inputSpecForType(t reflect.Type) *inputSpec {
 			name := validation.TagName(f.Tag.Get("file"))
 			spec.bodyMode = bodyModeMultipart
 			spec.bindings = append(spec.bindings, inputBinding{
-				index:    i,
+				index:    index,
 				name:     name,
 				location: "file field",
 				source:   "file",
@@ -747,7 +771,7 @@ func inputSpecForType(t reflect.Type) *inputSpec {
 			name := validation.TagName(f.Tag.Get("files"))
 			spec.bodyMode = bodyModeMultipart
 			spec.bindings = append(spec.bindings, inputBinding{
-				index:    i,
+				index:    index,
 				name:     name,
 				location: "file fields",
 				source:   "files",
@@ -759,7 +783,7 @@ func inputSpecForType(t reflect.Type) *inputSpec {
 			})
 		case f.Tag.Get("body") != "" || f.Name == "Body":
 			spec.bodyMode = bodyModeField
-			spec.bodyIndex = i
+			spec.bodyIndex = index
 			spec.bodyType = validation.IndirectType(f.Type)
 			spec.bodyRequired = validation.FieldRequired(f, "json")
 			spec.requiredBodyFields = RequiredJSONFields(spec.bodyType, nil, nil)
@@ -782,6 +806,29 @@ func inputSpecForType(t reflect.Type) *inputSpec {
 	}
 
 	return spec
+}
+
+func fieldByIndex(value reflect.Value, index []int) reflect.Value {
+	for _, position := range index {
+		for value.Kind() == reflect.Pointer {
+			if value.IsNil() {
+				value.Set(reflect.New(value.Type().Elem()))
+			}
+			value = value.Elem()
+		}
+		value = value.Field(position)
+	}
+	return value
+}
+
+func structFieldByIndex(t reflect.Type, index []int) reflect.StructField {
+	t = validation.IndirectType(t)
+	var field reflect.StructField
+	for _, position := range index {
+		field = t.Field(position)
+		t = validation.IndirectType(field.Type)
+	}
+	return field
 }
 
 func decodeRequestBody(req *http.Request, target reflect.Value, spec *inputSpec, codecs []Codec) error {
@@ -830,7 +877,7 @@ func decodeRequestBody(req *http.Request, target reflect.Value, spec *inputSpec,
 			return fmt.Errorf("failed to decode body: %w", err)
 		}
 	case bodyModeField:
-		field := target.Field(spec.bodyIndex)
+		field := fieldByIndex(target, spec.bodyIndex)
 		if field.Kind() == reflect.Pointer {
 			if field.IsNil() {
 				field.Set(reflect.New(field.Type().Elem()))
@@ -855,7 +902,7 @@ func decodeRequestBodyWithCodec(req *http.Request, target reflect.Value, spec *i
 			return fmt.Errorf("failed to decode body: %w", err)
 		}
 	case bodyModeField:
-		field := target.Field(spec.bodyIndex)
+		field := fieldByIndex(target, spec.bodyIndex)
 		if field.Kind() == reflect.Pointer {
 			if field.IsNil() {
 				field.Set(reflect.New(field.Type().Elem()))
@@ -1485,9 +1532,10 @@ func bodySchemaForSpec(spec *inputSpec, registry *openapi.Registry) *openapi.Sch
 	switch spec.bodyMode {
 	case bodyModeStruct:
 		bodySchema := &openapi.Schema{Type: "object", Properties: map[string]*openapi.Schema{}}
-		for i := 0; i < spec.typ.NumField(); i++ {
-			f := spec.typ.Field(i)
-			if !f.IsExported() || hasParamTag(f) {
+		fields, _ := validation.FlattenFields(spec.typ)
+		for _, flattened := range fields {
+			f := flattened.Field
+			if hasParamTag(f) {
 				continue
 			}
 			jsonName, ok := jsonFieldName(f)
@@ -1506,7 +1554,7 @@ func bodySchemaForSpec(spec *inputSpec, registry *openapi.Registry) *openapi.Sch
 		}
 		return bodySchema
 	case bodyModeField:
-		field := spec.typ.Field(spec.bodyIndex)
+		field := structFieldByIndex(spec.typ, spec.bodyIndex)
 		return openapi.CloneSchema(registry.Schema(field.Type))
 	case bodyModeMultipart:
 		bodySchema := &openapi.Schema{Type: "object", Properties: map[string]*openapi.Schema{}}
@@ -1519,7 +1567,7 @@ func bodySchemaForSpec(spec *inputSpec, registry *openapi.Registry) *openapi.Sch
 				continue
 			}
 			seen[binding.name] = true
-			f := spec.typ.Field(binding.index)
+			f := structFieldByIndex(spec.typ, binding.index)
 			var fieldSchema *openapi.Schema
 			switch binding.source {
 			case "file":
@@ -1589,10 +1637,17 @@ func RequiredJSONFields(t reflect.Type, pointerPrefix, pathPrefix []string) []Re
 		return nil
 	}
 	fields := make([]RequiredJSONField, 0)
-	for i := 0; i < t.NumField(); i++ {
+	for i := range t.NumField() {
 		f := t.Field(i)
 		if !f.IsExported() || hasParamTag(f) {
 			continue
+		}
+		if f.Anonymous && f.Name != "Body" && f.Tag.Get("body") == "" && f.Tag.Get("json") == "" {
+			nestedType := validation.IndirectType(f.Type)
+			if nestedType != nil && nestedType.Kind() == reflect.Struct && !isScalarStruct(nestedType) {
+				fields = append(fields, RequiredJSONFields(f.Type, pointerPrefix, pathPrefix)...)
+				continue
+			}
 		}
 		if f.Tag.Get("body") != "" || f.Name == "Body" {
 			fields = append(fields, RequiredJSONFields(f.Type, pointerPrefix, pathPrefix)...)

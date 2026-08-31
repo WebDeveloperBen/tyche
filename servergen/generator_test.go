@@ -307,6 +307,62 @@ func TestGeneratedSamplePackageCompilesAndRunsMultipartRoute(t *testing.T) {
 	}
 }
 
+func TestGeneratedEmbeddedPackageRunsPaginationRoute(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping generated package runtime test in short mode")
+	}
+
+	routes, err := servergen.LoadRoutes([]string{"./testdata/embeddedpkg"})
+	if err != nil {
+		t.Fatalf("LoadRoutes failed: %v", err)
+	}
+	content, err := servergen.GeneratePackageManifest(routes[0].PackagePath, routes)
+	if err != nil {
+		t.Fatalf("GeneratePackageManifest failed: %v", err)
+	}
+
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	repoRoot := filepath.Dir(wd)
+	srcDir := filepath.Join(wd, "testdata", "embeddedpkg")
+	dstDir := t.TempDir()
+	entries, err := os.ReadDir(srcDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(srcDir, entry.Name())) //nolint:gosec
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dstDir, entry.Name()), data, 0o600); err != nil { //nolint:gosec
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dstDir, servergen.GeneratedFilename), content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	goMod := "module example.com/generated/embeddedpkg\n\n" +
+		"go 1.26\n\n" +
+		"require github.com/webdeveloperben/tyche v0.0.0\n\n" +
+		"replace github.com/webdeveloperben/tyche => " + filepath.ToSlash(repoRoot) + "\n"
+	if err := os.WriteFile(filepath.Join(dstDir, "go.mod"), []byte(goMod), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := exec.Command("go", "test", "./...")
+	cmd.Dir = dstDir
+	cmd.Env = append(os.Environ(), "GOWORK=off", "GOCACHE="+filepath.Join(dstDir, ".gocache"))
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("generated embedded package failed: %v\n%s", err, out)
+	}
+}
+
 const generatedMultipartHarness = `package samplepkg
 
 import (
@@ -371,3 +427,34 @@ func TestGeneratedBareParamsAreOptional(t *testing.T) {
 	}
 }
 `
+
+func TestLoadRoutes_FlattensEmbeddedParameters(t *testing.T) {
+	routes, err := servergen.LoadRoutes([]string{"./testdata/embeddedpkg"})
+	if err != nil {
+		t.Fatalf("LoadRoutes failed: %v", err)
+	}
+	if len(routes) != 1 {
+		t.Fatalf("routes = %d, want 1", len(routes))
+	}
+	fields := routes[0].InputBind.Fields
+	if len(fields) != 3 {
+		t.Fatalf("generated fields = %#v, want tenant_id, limit, cursor", fields)
+	}
+	if fields[1].FieldName != "Params.Limit" || fields[2].FieldName != "Params.Cursor" {
+		t.Fatalf("generated embedded fields = %#v", fields)
+	}
+	content, err := servergen.GeneratePackageManifest(routes[0].PackagePath, routes)
+	if err != nil {
+		t.Fatalf("GeneratePackageManifest failed: %v", err)
+	}
+	text := string(content)
+	for _, want := range []string{
+		`req.URL.Query().Get("limit")`,
+		`in.Params.Limit`,
+		`in.Params.Cursor`,
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("generated manifest missing %q:\n%s", want, text)
+		}
+	}
+}

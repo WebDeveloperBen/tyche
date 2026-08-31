@@ -30,7 +30,10 @@ func validateStructValue(errs *Error, v reflect.Value, spec *StructSpec, scope s
 	}
 
 	for _, field := range spec.Fields {
-		fieldValue := v.Field(field.Index)
+		fieldValue, ok := fieldValueByIndex(v, field.IndexPath)
+		if !ok {
+			continue
+		}
 		var fieldScope string
 		if field.FullPointer != "" {
 			fieldScope = field.FullPointer
@@ -232,6 +235,22 @@ func validateHexOnlyUUID(value string) bool {
 
 func StringLength(value string) int {
 	return utf8.RuneCountInString(value)
+}
+
+func fieldValueByIndex(value reflect.Value, index []int) (reflect.Value, bool) {
+	for _, position := range index {
+		for value.Kind() == reflect.Pointer {
+			if value.IsNil() {
+				return reflect.Value{}, false
+			}
+			value = value.Elem()
+		}
+		if value.Kind() != reflect.Struct || position >= value.NumField() {
+			return reflect.Value{}, false
+		}
+		value = value.Field(position)
+	}
+	return value, value.IsValid()
 }
 
 func isHexByte(b byte) bool {

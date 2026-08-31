@@ -380,3 +380,30 @@ func TestStringLength(t *testing.T) {
 		}
 	}
 }
+
+func TestValidate_EmbeddedFieldsAreFlattened(t *testing.T) {
+	type Params struct {
+		Limit int `query:"limit" validate:"max=10"`
+	}
+	type Input struct {
+		Params
+	}
+	assertSingleCode(t, validate(t, Input{Params: Params{Limit: 11}}), "max")
+	assertNoError(t, validate(t, Input{Params: Params{Limit: 10}}))
+}
+
+func TestStruct_RejectsDuplicateFlattenedParameters(t *testing.T) {
+	type First struct {
+		Limit int `query:"limit"`
+	}
+	type Second struct {
+		Limit int `query:"limit"`
+	}
+	type Input struct {
+		First
+		Second
+	}
+	if _, err := validation.Struct(reflect.TypeFor[Input]()); err == nil {
+		t.Fatal("expected duplicate flattened parameter error")
+	}
+}
