@@ -8,8 +8,10 @@ import (
 	"github.com/webdeveloperben/tyche/pagination"
 )
 
-var paginationParamsType = reflect.TypeFor[pagination.Params]()
-var paginationBindingsCache sync.Map
+var (
+	paginationParamsType    = reflect.TypeFor[pagination.Params]()
+	paginationBindingsCache sync.Map
+)
 
 type paginationBinding struct {
 	index []int
