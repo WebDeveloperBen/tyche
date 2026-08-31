@@ -7,9 +7,25 @@ import (
 	"slices"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/webdeveloperben/tyche/server/validation"
 )
+
+func generatedFieldIdentifier(name string) string {
+	var encoded strings.Builder
+	for _, char := range name {
+		switch char {
+		case '_':
+			encoded.WriteString("_u")
+		case '.':
+			encoded.WriteString("_d")
+		default:
+			encoded.WriteRune(char)
+		}
+	}
+	return encoded.String()
+}
 
 func writeParseBody(buf *bytes.Buffer, route RouteSpec) {
 	if !route.InputBind.Manual {
@@ -31,7 +47,7 @@ func writeParseBody(buf *bytes.Buffer, route RouteSpec) {
 	buf.WriteString("\n")
 	buf.WriteString("\t\t\tvar validationErr serverpkg.ValidationError\n")
 	for _, field := range route.InputBind.Fields {
-		rawVar := "raw_" + field.FieldName
+		rawVar := "raw_" + generatedFieldIdentifier(field.FieldName)
 		pointer := validation.JSONPointer(field.Source, field.ParamName)
 		switch field.Source {
 		case "path":
@@ -113,8 +129,8 @@ func writeParseBody(buf *bytes.Buffer, route RouteSpec) {
 }
 
 func writeFormFieldParse(buf *bytes.Buffer, field BindFieldSpec, rawVar, pointer string) {
-	valuesVar := "values_" + field.FieldName
-	okVar := "ok_" + field.FieldName
+	valuesVar := "values_" + generatedFieldIdentifier(field.FieldName)
+	okVar := "ok_" + generatedFieldIdentifier(field.FieldName)
 	buf.WriteString("\t\t\t" + valuesVar + ", " + okVar + ", err := serverpkg.ReadMultipartFormValues(req, " + strconv.Quote(field.ParamName) + ")\n")
 	buf.WriteString("\t\t\tif err != nil { return nil, err }\n")
 	buf.WriteString("\t\t\tif !" + okVar + " {\n")
@@ -178,7 +194,7 @@ func writeFormSliceAppendParsed(buf *bytes.Buffer, target, elemType, kind string
 }
 
 func writeFileFieldParse(buf *bytes.Buffer, field BindFieldSpec, rawVar, pointer string) {
-	okVar := "ok_" + field.FieldName
+	okVar := "ok_" + generatedFieldIdentifier(field.FieldName)
 	buf.WriteString("\t\t\t" + rawVar + ", " + okVar + ", err := serverpkg.ReadMultipartFiles(req, " + strconv.Quote(field.ParamName) + ")\n")
 	buf.WriteString("\t\t\tif err != nil { return nil, err }\n")
 	buf.WriteString("\t\t\tif !" + okVar + " {\n")
@@ -191,7 +207,7 @@ func writeFileFieldParse(buf *bytes.Buffer, field BindFieldSpec, rawVar, pointer
 }
 
 func writeFilesFieldParse(buf *bytes.Buffer, field BindFieldSpec, rawVar, pointer string) {
-	okVar := "ok_" + field.FieldName
+	okVar := "ok_" + generatedFieldIdentifier(field.FieldName)
 	buf.WriteString("\t\t\t" + rawVar + ", " + okVar + ", err := serverpkg.ReadMultipartFiles(req, " + strconv.Quote(field.ParamName) + ")\n")
 	buf.WriteString("\t\t\tif err != nil { return nil, err }\n")
 	buf.WriteString("\t\t\tif !" + okVar + " {\n")

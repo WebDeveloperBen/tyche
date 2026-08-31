@@ -29,8 +29,21 @@ func validateStructValue(errs *Error, v reflect.Value, spec *StructSpec, scope s
 		return
 	}
 
-	for _, field := range spec.Fields {
-		fieldValue := v.Field(field.Index)
+	fieldCount := v.NumField()
+	for i := range spec.Fields {
+		field := &spec.Fields[i]
+		var fieldValue reflect.Value
+		if len(field.IndexPath) == 1 && field.IndexPath[0] < fieldCount {
+			// The common case is a direct field. Avoid the pointer/struct
+			// walk needed for flattened embedded fields.
+			fieldValue = v.Field(field.IndexPath[0])
+		} else {
+			var ok bool
+			fieldValue, ok = fieldValueByIndex(v, field.IndexPath)
+			if !ok {
+				continue
+			}
+		}
 		var fieldScope string
 		if field.FullPointer != "" {
 			fieldScope = field.FullPointer
@@ -45,7 +58,7 @@ func validateStructValue(errs *Error, v reflect.Value, spec *StructSpec, scope s
 	}
 }
 
-func validateFieldValue(errs *Error, v reflect.Value, field FieldSpec, scope string) {
+func validateFieldValue(errs *Error, v reflect.Value, field *FieldSpec, scope string) {
 	pointer := scope
 	if v.Kind() == reflect.Pointer {
 		if v.IsNil() {
@@ -70,7 +83,7 @@ func validateFieldValue(errs *Error, v reflect.Value, field FieldSpec, scope str
 	}
 }
 
-func validateCollectionElements(errs *Error, v reflect.Value, field FieldSpec, scope string) {
+func validateCollectionElements(errs *Error, v reflect.Value, field *FieldSpec, scope string) {
 	if field.ElemNested == nil && len(field.Rules.ItemRules) == 0 {
 		return
 	}
@@ -85,88 +98,121 @@ func validateCollectionElements(errs *Error, v reflect.Value, field FieldSpec, s
 	default:
 		return
 	}
-	for i := 0; i < v.Len(); i++ {
+	for i := range v.Len() {
 		itemValue := v.Index(i)
-		itemPointer := JoinPointerWithIndex(scope, i)
+		itemPointer := ""
 		if field.ElemNested != nil {
+			itemPointer = JoinPointerWithIndex(scope, i)
 			validateStructValue(errs, itemValue, field.ElemNested, itemPointer)
 		}
 		for _, rule := range field.Rules.ItemRules {
-			applyRule(errs, itemValue, itemPointer, rule)
+			applyItemRule(errs, itemValue, scope, i, itemPointer, rule)
 		}
 	}
 }
 
+type ruleFailure struct {
+	kind    RuleKind
+	subject Subject
+	value   int
+	err     error
+	invalid bool
+}
+
 func applyRule(errs *Error, v reflect.Value, pointer string, rule Rule) {
+	failure := evaluateRule(v, rule)
+	if failure.err != nil {
+		errs.AddInvalidRule(pointer, failure.err)
+	} else if failure.invalid {
+		errs.AddRule(pointer, failure.kind, failure.subject, failure.value)
+	}
+}
+
+func applyItemRule(errs *Error, v reflect.Value, scope string, index int, pointer string, rule Rule) {
+	failure := evaluateRule(v, rule)
+	if !failure.invalid && failure.err == nil {
+		return
+	}
+	if pointer == "" {
+		pointer = JoinPointerWithIndex(scope, index)
+	}
+	if failure.err != nil {
+		errs.AddInvalidRule(pointer, failure.err)
+	} else {
+		errs.AddRule(pointer, failure.kind, failure.subject, failure.value)
+	}
+}
+
+func evaluateRule(v reflect.Value, rule Rule) ruleFailure {
 	switch rule.Kind {
 	case RuleMin:
 		switch v.Kind() {
 		case reflect.String:
 			if StringLength(v.String()) < rule.Int {
-				errs.AddRule(pointer, RuleMin, SubjectString, rule.Int)
+				return ruleFailure{kind: RuleMin, subject: SubjectString, value: rule.Int, invalid: true}
 			}
 		default:
 			if numericValue(v) < float64(rule.Int) {
-				errs.AddRule(pointer, RuleMin, SubjectNumber, rule.Int)
+				return ruleFailure{kind: RuleMin, subject: SubjectNumber, value: rule.Int, invalid: true}
 			}
 		}
 	case RuleMax:
 		switch v.Kind() {
 		case reflect.String:
 			if StringLength(v.String()) > rule.Int {
-				errs.AddRule(pointer, RuleMax, SubjectString, rule.Int)
+				return ruleFailure{kind: RuleMax, subject: SubjectString, value: rule.Int, invalid: true}
 			}
 		default:
 			if numericValue(v) > float64(rule.Int) {
-				errs.AddRule(pointer, RuleMax, SubjectNumber, rule.Int)
+				return ruleFailure{kind: RuleMax, subject: SubjectNumber, value: rule.Int, invalid: true}
 			}
 		}
 	case RuleLen:
 		switch v.Kind() {
 		case reflect.String:
 			if StringLength(v.String()) != rule.Int {
-				errs.AddRule(pointer, RuleLen, SubjectString, rule.Int)
+				return ruleFailure{kind: RuleLen, subject: SubjectString, value: rule.Int, invalid: true}
 			}
 		default:
 			if numericValue(v) != float64(rule.Int) {
-				errs.AddRule(pointer, RuleLen, SubjectNumber, rule.Int)
+				return ruleFailure{kind: RuleLen, subject: SubjectNumber, value: rule.Int, invalid: true}
 			}
 		}
 	case RuleMinItems:
 		if v.Len() < rule.Int {
-			errs.AddRule(pointer, RuleMinItems, SubjectCollection, rule.Int)
+			return ruleFailure{kind: RuleMinItems, subject: SubjectCollection, value: rule.Int, invalid: true}
 		}
 	case RuleMaxItems:
 		if v.Len() > rule.Int {
-			errs.AddRule(pointer, RuleMaxItems, SubjectCollection, rule.Int)
+			return ruleFailure{kind: RuleMaxItems, subject: SubjectCollection, value: rule.Int, invalid: true}
 		}
 	case RuleOneOf:
 		if !slices.Contains(rule.List, v.String()) {
-			errs.AddRule(pointer, RuleOneOf, SubjectString, 0)
+			return ruleFailure{kind: RuleOneOf, subject: SubjectString, invalid: true}
 		}
 	case RulePattern:
 		re, err := compiledPattern(rule.String)
 		if err != nil {
-			errs.AddInvalidRule(pointer, err)
-			return
+			return ruleFailure{err: err}
 		}
 		if !re.MatchString(v.String()) {
-			errs.AddRule(pointer, RulePattern, SubjectString, 0)
+			return ruleFailure{kind: RulePattern, subject: SubjectString, invalid: true}
 		}
 	case RuleEmail:
 		if _, err := mail.ParseAddress(v.String()); err != nil {
-			errs.AddRule(pointer, RuleEmail, SubjectString, 0)
+			return ruleFailure{kind: RuleEmail, subject: SubjectString, invalid: true}
 		}
 	case RuleURL:
 		parsed, err := url.ParseRequestURI(v.String())
 		if err != nil || parsed == nil || parsed.Scheme == "" || parsed.Host == "" {
-			errs.AddRule(pointer, RuleURL, SubjectString, 0)
+			return ruleFailure{kind: RuleURL, subject: SubjectString, invalid: true}
 		}
 	case RuleUUID:
 		if !ValidateUUID(v.String()) {
-			errs.AddRule(pointer, RuleUUID, SubjectString, 0)
+			return ruleFailure{kind: RuleUUID, subject: SubjectString, invalid: true}
 		}
 	}
+	return ruleFailure{}
 }
 
 func compiledPattern(pattern string) (*regexp.Regexp, error) {
@@ -232,6 +278,22 @@ func validateHexOnlyUUID(value string) bool {
 
 func StringLength(value string) int {
 	return utf8.RuneCountInString(value)
+}
+
+func fieldValueByIndex(value reflect.Value, index []int) (reflect.Value, bool) {
+	for _, position := range index {
+		for value.Kind() == reflect.Pointer {
+			if value.IsNil() {
+				return reflect.Value{}, false
+			}
+			value = value.Elem()
+		}
+		if value.Kind() != reflect.Struct || position >= value.NumField() {
+			return reflect.Value{}, false
+		}
+		value = value.Field(position)
+	}
+	return value, value.IsValid()
 }
 
 func isHexByte(b byte) bool {

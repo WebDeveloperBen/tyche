@@ -283,6 +283,9 @@ func RegisterStreamE[I, O any](grp RouteTarget, op Operation, handler StreamHand
 
 	inputType := reflect.TypeFor[I]()
 	outputType := reflect.TypeFor[O]()
+	if _, err := validation.FlattenFields(inputType); err != nil {
+		return fmt.Errorf("invalid input binding for %s: %w", validation.IndirectType(inputType), err)
+	}
 	if !op.SkipValidateRequest {
 		if _, err := validation.Struct(inputType); err != nil {
 			return fmt.Errorf("invalid input validation for %s: %w", validation.IndirectType(inputType), err)
@@ -304,13 +307,16 @@ func RegisterStreamE[I, O any](grp RouteTarget, op Operation, handler StreamHand
 		}
 	}
 	ro := resolveRouteOptions(opts)
+	if err := validatePaginationConfig(inputType, ro.paginationConfig); err != nil {
+		return fmt.Errorf("invalid pagination config: %w", err)
+	}
 	requestCodecs, err := codecsForMediaTypes(grp.apiCodecs(), ro.requestContentTypes)
 	if err != nil {
 		return err
 	}
 
 	httpHandler := func(w http.ResponseWriter, req *http.Request) error {
-		input, err := parseRequestWithCodecs[I](req, requestCodecs)
+		input, err := parseRequestWithPaginationConfig[I](req, requestCodecs, ro.paginationConfig)
 		if err != nil {
 			var validationErr *validation.Error
 			if errors.As(err, &validationErr) {
@@ -338,11 +344,13 @@ func RegisterStreamE[I, O any](grp RouteTarget, op Operation, handler StreamHand
 	if err := grp.handleRoute(op.Method, op.Path, httpHandler, ro); err != nil {
 		return err
 	}
-	registerStreamOpenAPIOperation(grp, op, inputType, outputType, requestCodecs)
+	if err := registerStreamOpenAPIOperation(grp, op, inputType, outputType, requestCodecs); err != nil {
+		return err
+	}
 	return nil
 }
 
-func registerStreamOpenAPIOperation(grp RouteTarget, op Operation, inputType, outputType reflect.Type, requestCodecs []Codec) {
+func registerStreamOpenAPIOperation(grp RouteTarget, op Operation, inputType, outputType reflect.Type, requestCodecs []Codec) error {
 	doc := grp.apiDoc()
 	registry := grp.apiSchemaRegistry()
 
@@ -373,12 +381,16 @@ func registerStreamOpenAPIOperation(grp RouteTarget, op Operation, inputType, ou
 		},
 	}
 
+	params, err := extractParameters(inputType, registry)
+	if err != nil {
+		return err
+	}
 	docOp := &openapi.Operation{
 		Summary:     op.Summary,
 		Description: op.Description,
 		OperationID: op.OperationID,
 		Tags:        op.Tags,
-		Parameters:  extractParameters(inputType, registry),
+		Parameters:  params,
 		RequestBody: extractRequestBody(inputType, registry, requestCodecs),
 		Responses:   responses,
 		Deprecated:  op.Deprecated,
@@ -414,4 +426,5 @@ func registerStreamOpenAPIOperation(grp RouteTarget, op Operation, inputType, ou
 		OutputType:  outputType,
 	})
 	grp.invalidateOpenAPI()
+	return nil
 }

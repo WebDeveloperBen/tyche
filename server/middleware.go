@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 	"slices"
+
+	"github.com/webdeveloperben/tyche/pagination"
 )
 
 // MiddlewareFunc is an inline middleware signature that receives the next
@@ -70,6 +72,7 @@ type routeOptions struct {
 	middleware           []Middleware
 	requestContentTypes  []string
 	responseContentTypes []string
+	paginationConfig     pagination.Config
 }
 
 // RouteOption customizes the registration of an individual route. Options are
@@ -122,6 +125,15 @@ func WithRequestContentTypes(mediaTypes ...string) RouteOption {
 func WithResponseContentTypes(mediaTypes ...string) RouteOption {
 	return func(o *routeOptions) {
 		o.responseContentTypes = append(o.responseContentTypes, mediaTypes...)
+	}
+}
+
+// WithPaginationConfig applies cursor-pagination defaults and bounds to typed
+// routes that include [pagination.Params]. Routes without pagination inputs are
+// unaffected.
+func WithPaginationConfig(config pagination.Config) RouteOption {
+	return func(o *routeOptions) {
+		o.paginationConfig = config
 	}
 }
 

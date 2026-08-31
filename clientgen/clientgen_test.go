@@ -677,3 +677,63 @@ func TestGenerate_RuntimeBehavior(t *testing.T) {
 		t.Fatalf("generated client runtime test failed: %v\n%s", err, out)
 	}
 }
+
+func TestGenerate_PaginationResponseIsTyped(t *testing.T) {
+	const spec = `{
+		"openapi": "3.1.0",
+		"info": {"title": "Pagination", "version": "1.0.0"},
+		"paths": {
+			"/tenants": {
+				"get": {
+					"operationId": "list-tenants",
+					"responses": {
+						"200": {
+							"content": {
+								"application/json": {
+									"schema": {
+										"type": "object",
+										"properties": {
+											"data": {
+												"type": "object",
+												"properties": {
+													"tenants": {"type": "array", "items": {"type": "string"}},
+													"page": {
+														"type": "object",
+														"properties": {
+															"next_cursor": {"type": "string"},
+															"has_more": {"type": "boolean"}
+														},
+														"required": ["has_more"]
+													}
+												},
+												"required": ["tenants", "page"]
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}`
+	doc, err := clientgen.ParseDocument([]byte(spec))
+	if err != nil {
+		t.Fatalf("ParseDocument: %v", err)
+	}
+	res, err := clientgen.Generate(doc, clientgen.Options{Module: "example.com/pagination/client"})
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	types := normalizeWS(mustFile(res, "types.go"))
+	for _, want := range []string{"Tenants []string", "NextCursor *string", "HasMore bool"} {
+		if !strings.Contains(types, want) {
+			t.Fatalf("types.go missing %q:\n%s", want, types)
+		}
+	}
+	operations := mustFile(res, "operations.go")
+	if !strings.Contains(operations, "ListTenantsOutput") {
+		t.Fatalf("operations.go missing typed list response:\n%s", operations)
+	}
+}

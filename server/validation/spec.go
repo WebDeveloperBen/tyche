@@ -23,6 +23,7 @@ type FieldSpec struct {
 	FullPointer string
 	Rules       FieldRules
 	Index       int
+	IndexPath   []int
 	HasParam    bool
 	Required    bool
 }
@@ -103,14 +104,13 @@ func buildStructSpec(t reflect.Type) (*StructSpec, error) {
 	if err := validateBodyModeCompatibility(t); err != nil {
 		return nil, err
 	}
-
-	spec.Fields = make([]FieldSpec, 0, t.NumField())
-	for i := 0; i < t.NumField(); i++ {
-		f := t.Field(i)
-		if !f.IsExported() {
-			continue
-		}
-
+	fields, err := FlattenFields(t)
+	if err != nil {
+		return nil, err
+	}
+	spec.Fields = make([]FieldSpec, 0, len(fields))
+	for _, flattened := range fields {
+		f := flattened.Field
 		rules, err := ParseFieldRules(f.Tag)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", f.Name, err)
@@ -123,7 +123,8 @@ func buildStructSpec(t reflect.Type) (*StructSpec, error) {
 		}
 
 		fieldSpec := FieldSpec{
-			Index:       i,
+			Index:       flattened.Index[0],
+			IndexPath:   append([]int(nil), flattened.Index...),
 			Name:        fieldNameForValidation(f),
 			Type:        f.Type,
 			HasParam:    HasParamTag(f),
@@ -134,7 +135,7 @@ func buildStructSpec(t reflect.Type) (*StructSpec, error) {
 		}
 
 		nestedType := IndirectType(f.Type)
-		if nestedType.Kind() == reflect.Struct && !isScalarStruct(nestedType) {
+		if nestedType != nil && nestedType.Kind() == reflect.Struct && !isScalarStruct(nestedType) {
 			nested, err := Struct(nestedType)
 			if err != nil {
 				return nil, err
@@ -153,24 +154,21 @@ func buildStructSpec(t reflect.Type) (*StructSpec, error) {
 	}
 
 	for i := range spec.Fields {
-		if i == 0 {
-			spec.Fields[i].FullPointer = spec.Fields[i].Pointer
-		} else {
-			spec.Fields[i].FullPointer = JoinPointer(spec.Fields[0].Pointer, spec.Fields[i].Pointer)
-		}
+		spec.Fields[i].FullPointer = spec.Fields[i].Pointer
 	}
 
 	return spec, nil
 }
 
 func validateBodyModeCompatibility(t reflect.Type) error {
+	fields, err := FlattenFields(t)
+	if err != nil {
+		return err
+	}
 	var hasMultipart bool
 	var hasJSONBody bool
-	for i := 0; i < t.NumField(); i++ {
-		f := t.Field(i)
-		if !f.IsExported() {
-			continue
-		}
+	for _, flattened := range fields {
+		f := flattened.Field
 		if HasMultipartTag(f) {
 			hasMultipart = true
 		}

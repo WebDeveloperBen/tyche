@@ -331,7 +331,7 @@ func loadPackageRoutes(pkg *packages.Package) ([]RouteSpec, error) {
 }
 
 func routeSpecFromCall(pkg *packages.Package, call *ast.CallExpr, serverImportPath string) (RouteSpec, bool, error) {
-	if len(call.Args) != 3 {
+	if len(call.Args) < 3 {
 		return RouteSpec{}, false, nil
 	}
 
@@ -390,7 +390,11 @@ func routeSpecFromCall(pkg *packages.Package, call *ast.CallExpr, serverImportPa
 	spec.OutputType = types.TypeString(outputPtr.Elem(), qualifierFor(pkg.Types))
 	spec.InputTypeKey = generatedTypeKey(inputPtr.Elem())
 	spec.OutputTypeKey = generatedTypeKey(outputPtr.Elem())
-	spec.InputBind = analyseInputType(inputPtr.Elem())
+	inputBind, err := analyseInputType(inputPtr.Elem())
+	if err != nil {
+		return RouteSpec{}, false, fmt.Errorf("analyse input %s: %w", spec.OperationID, err)
+	}
+	spec.InputBind = inputBind
 	spec.OutputWrite = analyseOutputType(outputPtr.Elem())
 	spec.ResponseContentTypes = generatedResponseContentTypes(spec.OutputWrite)
 
