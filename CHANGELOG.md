@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/WebDeveloperBen/tyche/compare/v1.1.0...v1.2.0) (2026-10-08)
+
+
+### Features
+
+* support extra json codexs ([c51adb1](https://github.com/WebDeveloperBen/tyche/commit/c51adb1b96fda1ecfac20e826cb5452c0c19a497))
+
 ## [1.1.0](https://github.com/WebDeveloperBen/tyche/compare/v1.0.2...v1.1.0) (2026-08-31)
 
 
