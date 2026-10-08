@@ -82,9 +82,13 @@ func NewAPI(adapter Adapter, cfg ...APIConfig) *API {
 	if len(cfg) > 0 {
 		c = cfg[0]
 	}
+	defaultCodecs := []Codec{JSONCodec{}}
+	if c.ReplaceDefaultCodecs {
+		defaultCodecs = nil
+	}
 	merged := mergeAPIConfig(APIConfig{
 		OpenAPI:             OpenAPIInfo{Title: "API", Version: "1.0.0"},
-		Codecs:              []Codec{JSONCodec{}},
+		Codecs:              defaultCodecs,
 		MaxRequestBodyBytes: 10 << 20,
 	}, c)
 

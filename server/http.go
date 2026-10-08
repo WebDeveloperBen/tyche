@@ -69,10 +69,13 @@ type OpenAPIInfo struct {
 // APIConfig configures an [API]. The zero value is valid; NewAPI fills in
 // sensible defaults (title "API", version "1.0.0", 10 MiB body limit).
 type APIConfig struct {
-	ErrorHandler        ErrorHandler
-	OpenAPI             OpenAPIInfo
-	Codecs              []Codec
-	MaxRequestBodyBytes int64
+	ErrorHandler ErrorHandler
+	OpenAPI      OpenAPIInfo
+	Codecs       []Codec
+	// ReplaceDefaultCodecs makes Codecs the complete codec set for typed routes.
+	// When false (the default), Codecs are appended after Tyche's default JSONCodec.
+	ReplaceDefaultCodecs bool
+	MaxRequestBodyBytes  int64
 }
 
 // ErrorHandler converts an error returned by a HandlerFunc (or produced by the
@@ -96,7 +99,9 @@ func mergeAPIConfig(base, override APIConfig) APIConfig {
 	if override.ErrorHandler != nil {
 		base.ErrorHandler = override.ErrorHandler
 	}
-	if len(override.Codecs) > 0 {
+	if override.ReplaceDefaultCodecs {
+		base.Codecs = append([]Codec(nil), override.Codecs...)
+	} else if len(override.Codecs) > 0 {
 		base.Codecs = append(base.Codecs, override.Codecs...)
 	}
 	return base

@@ -409,7 +409,7 @@ api.Mount("/debug/pprof", pprofMux)
 <details>
 <summary><strong>Content negotiation</strong></summary>
 
-Typed routes use `application/json` by default. Register extra server codecs with `APIConfig.Codecs`; `JSONCodec` remains available automatically. OpenAPI advertises every configured codec for non-multipart request bodies and success responses, and runtime request/response selection uses `Content-Type` and `Accept`.
+Typed routes use `application/json` by default. Register extra server codecs with `APIConfig.Codecs`; `JSONCodec` remains available automatically. Set `ReplaceDefaultCodecs: true` to make `Codecs` the complete set instead, including when replacing the default `application/json` codec. This controls typed request decoding, success encoding, negotiation, and the matching OpenAPI media types/schemas. With the option omitted, the existing append behavior is unchanged.
 
 ```go
 api := server.NewAPI(adapter, server.APIConfig{
@@ -420,6 +420,15 @@ server.Register(api, op, handler,
 	server.WithRequestContentTypes("application/json"),
 	server.WithResponseContentTypes("application/vnd.example+json"),
 )
+```
+
+To replace the default JSON envelope/codec:
+
+```go
+api := server.NewAPI(adapter, server.APIConfig{
+	Codecs:               []server.Codec{myJSONCodec},
+	ReplaceDefaultCodecs: true,
+})
 ```
 
 When extra codecs are configured, older JSON-only generated route codecs are bypassed in favour of the negotiated reflection path. Regenerated route codecs receive the route codec set and keep the fast JSON path when JSON is selected.

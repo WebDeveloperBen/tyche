@@ -196,6 +196,62 @@ func TestAPIConfigCodecsOpenAPIContentTypes(t *testing.T) {
 	}
 }
 
+func TestAPIConfigReplaceDefaultJSONCodec(t *testing.T) {
+	type input struct {
+		Name string `json:"name"`
+	}
+	type output struct {
+		Body struct {
+			Name string `json:"name"`
+		} `body:"true"`
+	}
+	custom := directJSONCodec{}
+	api := server.NewAPI(server.NewServeMuxAdapter(), server.APIConfig{
+		Codecs:               []server.Codec{custom},
+		ReplaceDefaultCodecs: true,
+	})
+	if codecs := api.Codecs(); len(codecs) != 1 || codecs[0].MediaType() != "application/json" {
+		t.Fatalf("selected codecs = %#v", codecs)
+	}
+	server.Register(api, server.Operation{
+		OperationID: "replace-default-json-codec",
+		Method:      http.MethodPost,
+		Path:        "/replace-default-codec",
+	}, func(_ context.Context, in *input) (*output, error) {
+		out := &output{}
+		out.Body.Name = in.Name
+		return out, nil
+	})
+	op := api.OpenAPI().Paths["/replace-default-codec"].POST
+	if op.RequestBody.Content["application/json"] == nil || op.Responses["200"].Content["application/json"] == nil {
+		t.Fatalf("OpenAPI omitted selected codec content: %#v", op)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/replace-default-codec", strings.NewReader(`{"name":"Ada"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	rec := httptest.NewRecorder()
+	api.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || rec.Body.String() != `{"name":"Ada"}`+"\n" {
+		t.Fatalf("status/body = %d/%q", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Content-Type"); got != "application/json" {
+		t.Fatalf("content type = %q", got)
+	}
+}
+
+type directJSONCodec struct{}
+
+func (directJSONCodec) MediaType() string { return "application/json" }
+func (directJSONCodec) DecodeRequest(r *http.Request, dst any) error {
+	return json.NewDecoder(r.Body).Decode(dst)
+}
+
+func (directJSONCodec) EncodeSuccess(w http.ResponseWriter, status int, value any) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	return json.NewEncoder(w).Encode(value)
+}
+
 func TestAPIConfigCodecsRuntimeSelection(t *testing.T) {
 	type input struct {
 		Body struct {
