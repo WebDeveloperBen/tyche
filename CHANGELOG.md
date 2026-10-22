@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.1](https://github.com/WebDeveloperBen/tyche/compare/v1.2.0...v1.2.1) (2026-10-22)
+
+
+### Bug Fixes
+
+* **validation:** compose JSON pointers for nested and item rules ([a0f8223](https://github.com/WebDeveloperBen/tyche/commit/a0f822372682e8470552f75d6604e0621844c4dc))
+
 ## [1.2.0](https://github.com/WebDeveloperBen/tyche/compare/v1.1.0...v1.2.0) (2026-10-08)
 
 
