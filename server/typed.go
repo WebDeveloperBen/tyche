@@ -472,7 +472,7 @@ func parseRequestWithCodecsUnenforced[I any](req *http.Request, codecs []Codec) 
 		}
 		spec.validationSpec.Store(specPtr)
 	}
-	if err := validation.ValidateStructValue(target, spec.validationSpec.Load(), "request"); err != nil {
+	if err := validation.ValidateStructValue(target, spec.validationSpec.Load(), ""); err != nil {
 		return nil, err
 	}
 

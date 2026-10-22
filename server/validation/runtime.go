@@ -6,12 +6,15 @@ import (
 	"reflect"
 	"regexp"
 	"slices"
+	"strings"
 	"sync"
 	"unicode/utf8"
 )
 
 var regexCache sync.Map
 
+// ValidateStructValue validates v against spec. scope is the JSON Pointer of v
+// within the request; "" is the document root.
 func ValidateStructValue(v reflect.Value, spec *StructSpec, scope string) error {
 	var errs Error
 	validateStructValue(&errs, v, spec, scope)
@@ -44,17 +47,28 @@ func validateStructValue(errs *Error, v reflect.Value, spec *StructSpec, scope s
 				continue
 			}
 		}
-		var fieldScope string
-		if field.FullPointer != "" {
-			fieldScope = field.FullPointer
-		} else {
-			fieldScope = scope
-		}
+		fieldScope := scopedFieldPointer(scope, field)
 		validateFieldValue(errs, fieldValue, field, fieldScope)
 		if field.Nested != nil {
 			validateStructValue(errs, fieldValue, field.Nested, fieldScope)
 		}
-		validateCollectionElements(errs, fieldValue, field, scope)
+		validateCollectionElements(errs, fieldValue, field, fieldScope)
+	}
+}
+
+// scopedFieldPointer resolves a field's JSON Pointer within its parent scope,
+// matching the pointers generated codecs emit.
+func scopedFieldPointer(scope string, field *FieldSpec) string {
+	switch {
+	case field.FullPointer == "":
+		// The request body itself shares its parent's location.
+		return scope
+	case strings.HasPrefix(field.FullPointer, "/"):
+		// Request parameters carry absolute pointers such as /query/q.
+		return field.FullPointer
+	default:
+		// JSON members are escaped tokens relative to their parent.
+		return scope + "/" + field.FullPointer
 	}
 }
 

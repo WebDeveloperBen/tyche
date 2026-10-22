@@ -15,7 +15,7 @@ func validate(t *testing.T, v any) error {
 	if err != nil {
 		t.Fatalf("Struct(%T): %v", v, err)
 	}
-	return validation.ValidateStructValue(reflect.ValueOf(v), spec, "request")
+	return validation.ValidateStructValue(reflect.ValueOf(v), spec, "")
 }
 
 // problemCodes returns the error codes from a validation error.
@@ -230,6 +230,44 @@ func TestValidate_ItemsUUID(t *testing.T) {
 	}
 	assertNoError(t, validate(t, S{IDs: []string{"550e8400-e29b-41d4-a716-446655440000"}}))
 	assertSingleCode(t, validate(t, S{IDs: []string{"not-a-uuid"}}), "invalid_uuid")
+}
+
+// Reflection validation must report the same JSON Pointers that generated
+// codecs emit, including for items and nested structs.
+func TestValidate_PointersLocateNestedAndItemFailures(t *testing.T) {
+	type Member struct {
+		Email string `json:"email" validate:"email"`
+	}
+	type Owner struct {
+		Name string `json:"name" validate:"min=2"`
+	}
+	type S struct {
+		Emails  []string `json:"emails"  validate:"maxItems=1,items.email"`
+		Members []Member `json:"members"`
+		Owner   Owner    `json:"owner"`
+		Tilde   string   `json:"a/b~c"   validate:"min=2"`
+	}
+
+	err := validate(t, S{
+		Emails:  []string{"a@b.com", "nope"},
+		Members: []Member{{Email: "a@b.com"}, {Email: "bad"}},
+		Owner:   Owner{Name: "x"},
+		Tilde:   "x",
+	})
+
+	var verr *validation.Error
+	if !errors.As(err, &verr) {
+		t.Fatalf("expected *validation.Error, got %v", err)
+	}
+
+	want := []string{"/emails", "/emails/1", "/members/1/email", "/owner/name", "/a~1b~0c"}
+	got := make([]string, len(verr.Problems))
+	for i, problem := range verr.Problems {
+		got[i] = problem.Pointer
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("pointers = %v, want %v", got, want)
+	}
 }
 
 // ── OmitEmpty ─────────────────────────────────────────────────────────────────
