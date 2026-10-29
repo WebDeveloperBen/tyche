@@ -5,7 +5,7 @@ go 1.25.5
 require (
 	github.com/danielgtaylor/huma/v2 v2.37.3
 	github.com/gin-gonic/gin v1.11.0
-	github.com/go-chi/chi/v5 v5.2.5
+	github.com/go-chi/chi/v5 v5.4.0
 	github.com/go-playground/validator/v10 v10.30.1
 	github.com/webdeveloperben/tyche v0.0.0
 )
