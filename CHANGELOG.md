@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.2](https://github.com/WebDeveloperBen/tyche/compare/v1.2.1...v1.2.2) (2026-11-08)
+
+
+### Bug Fixes
+
+* **openapi:** document time.Time as date-time string ([#39](https://github.com/WebDeveloperBen/tyche/issues/39)) ([f926c68](https://github.com/WebDeveloperBen/tyche/commit/f926c68084beefb5730f1fc3191bc0ab3ed8de25))
+* **openapi:** reference components for recursive types instead of overflowing ([#41](https://github.com/WebDeveloperBen/tyche/issues/41)) ([d985d0f](https://github.com/WebDeveloperBen/tyche/commit/d985d0ffd66c710747fcc1489b6c9ea7def5184c))
+
 ## [1.2.1](https://github.com/WebDeveloperBen/tyche/compare/v1.2.0...v1.2.1) (2026-10-22)
 
 
