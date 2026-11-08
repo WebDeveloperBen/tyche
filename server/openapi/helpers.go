@@ -63,7 +63,9 @@ func ApplyFieldSchemaMetadata(schema *Schema, f reflect.StructField) {
 	if err != nil {
 		return
 	}
-	schema.Format = constraints.Format
+	if constraints.Format != "" {
+		schema.Format = constraints.Format
+	}
 	schema.MinLength = constraints.MinLength
 	schema.MaxLength = constraints.MaxLength
 	schema.Minimum = constraints.Minimum

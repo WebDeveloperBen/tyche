@@ -3,9 +3,46 @@ package openapi_test
 import (
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/webdeveloperben/tyche/server/openapi"
 )
+
+func TestRegistry_TimeFieldsUseDateTimeFormat(t *testing.T) {
+	t.Parallel()
+
+	type model struct {
+		CreatedAt time.Time   `json:"created_at"`
+		UpdatedAt *time.Time  `json:"updated_at"`
+		History   []time.Time `json:"history"`
+	}
+
+	schema := openapi.NewRegistry("#/components/schemas").Schema(reflect.TypeFor[model]())
+	for _, name := range []string{"created_at", "updated_at"} {
+		field := schema.Properties[name]
+		if field.Type != "string" || field.Format != "date-time" {
+			t.Errorf("%s: got type %q, format %q", name, field.Type, field.Format)
+		}
+	}
+	history := schema.Properties["history"]
+	if history.Type != "array" || history.Items.Type != "string" || history.Items.Format != "date-time" {
+		t.Errorf("history: got type %q, items %#v", history.Type, history.Items)
+	}
+}
+
+func TestRegistry_TimeFieldFormatTagOverridesDateTime(t *testing.T) {
+	t.Parallel()
+
+	type model struct {
+		Date time.Time `json:"date" format:"date"`
+	}
+
+	schema := openapi.NewRegistry("#/components/schemas").Schema(reflect.TypeFor[model]())
+	field := schema.Properties["date"]
+	if field.Type != "string" || field.Format != "date" {
+		t.Fatalf("got type %q, format %q", field.Type, field.Format)
+	}
+}
 
 type recursiveLeft struct {
 	Right *recursiveRight `json:"right,omitempty"`
