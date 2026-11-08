@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"time"
 )
 
 type Registry struct {
@@ -69,6 +70,12 @@ func (r *Registry) schemaFromType(t reflect.Type) *Schema {
 	}
 
 	s := &Schema{}
+
+	if t == reflect.TypeFor[time.Time]() {
+		s.Type = "string"
+		s.Format = "date-time"
+		return s
+	}
 
 	if t == reflect.TypeFor[multipart.FileHeader]() {
 		s.Type = "string"
