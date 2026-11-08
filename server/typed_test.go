@@ -8,6 +8,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -527,6 +528,40 @@ func TestParseRequest_MultipartRequiredFile(t *testing.T) {
 	var validationErr *validation.Error
 	if err == nil || !errors.As(err, &validationErr) || len(validationErr.Problems) != 1 || validationErr.Problems[0].Pointer != "/file/avatar" {
 		t.Fatalf("expected required /file/avatar validation error, got %v", err)
+	}
+}
+
+func TestRegister_RecursiveOutputSchemaUsesComponentRef(t *testing.T) {
+	t.Parallel()
+
+	type node struct {
+		ID      string `json:"id"`
+		Reports []node `json:"reports"`
+	}
+	type output struct {
+		Body struct {
+			Roots []node `json:"roots"`
+		} `body:"true"`
+	}
+
+	router := server.NewAPI(server.NewServeMuxAdapter())
+	server.Register(router, server.Operation{
+		OperationID: "tree",
+		Method:      http.MethodGet,
+		Path:        "/tree",
+	}, func(context.Context, *struct{}) (*output, error) {
+		return &output{}, nil
+	})
+
+	spec := router.OpenAPI()
+	nodeName := server.SchemaComponentName(reflect.TypeFor[node]())
+	nodeSchema := spec.Components.Schemas[nodeName]
+	if nodeSchema == nil {
+		t.Fatalf("expected recursive component %q", nodeName)
+	}
+	reports := nodeSchema.Properties["reports"]
+	if reports == nil || reports.Items == nil || reports.Items.Ref != "#/components/schemas/"+nodeName {
+		t.Fatalf("expected reports items to reference %q, got %#v", nodeName, reports)
 	}
 }
 
