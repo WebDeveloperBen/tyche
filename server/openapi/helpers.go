@@ -11,6 +11,9 @@ func CloneSchema(s *Schema) *Schema {
 		return nil
 	}
 	clone := *s
+	if s.Ref != "" {
+		return &clone
+	}
 	if s.Properties != nil {
 		clone.Properties = make(map[string]*Schema, len(s.Properties))
 		for k, v := range s.Properties {

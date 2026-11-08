@@ -81,6 +81,8 @@ func TestRegistry_DoesNotLeakFieldMetadataAcrossSharedTypes(t *testing.T) {
 }
 
 func TestRegistry_SupportsRecursiveTypes(t *testing.T) {
+	t.Parallel()
+
 	type node struct {
 		Name     string `json:"name"`
 		Parent   *node  `json:"parent,omitempty"`
@@ -89,34 +91,51 @@ func TestRegistry_SupportsRecursiveTypes(t *testing.T) {
 
 	registry := openapi.NewRegistry("#/components/schemas")
 	schema := registry.Schema(reflect.TypeFor[node]())
-
-	if schema == nil {
-		t.Fatal("expected schema")
+	components := registry.RecursiveSchemas()
+	name := ""
+	for componentName, component := range components {
+		if component == schema {
+			name = componentName
+			break
+		}
 	}
-	if schema.Properties["parent"] == nil {
-		t.Fatal("expected recursive parent schema")
+	if name == "" {
+		t.Fatal("expected recursive node component")
 	}
-	if schema.Properties["children"] == nil || schema.Properties["children"].Items == nil {
-		t.Fatal("expected recursive children schema")
+	ref := "#/components/schemas/" + name
+	if got := schema.Properties["parent"]; got == nil || got.Ref != ref {
+		t.Fatalf("expected parent reference %q, got %#v", ref, got)
 	}
-	if got := schema.Properties["parent"].Properties["name"]; got == nil {
-		t.Fatal("expected recursive parent fields to be populated")
+	children := schema.Properties["children"]
+	if children == nil || children.Items == nil || children.Items.Ref != ref {
+		t.Fatalf("expected children items reference %q, got %#v", ref, children)
 	}
 }
 
 func TestRegistry_SupportsMutuallyRecursiveTypes(t *testing.T) {
+	t.Parallel()
+
 	registry := openapi.NewRegistry("#/components/schemas")
 	schema := registry.Schema(reflect.TypeFor[recursiveLeft]())
-
 	rightSchema := schema.Properties["right"]
 	if rightSchema == nil {
 		t.Fatal("expected right schema")
 	}
 	leftSchema := rightSchema.Properties["left"]
-	if leftSchema == nil {
-		t.Fatal("expected nested left schema")
+	if leftSchema == nil || leftSchema.Ref == "" {
+		t.Fatalf("expected left to reference its component, got %#v", leftSchema)
 	}
-	if got := leftSchema.Properties["name"]; got == nil {
-		t.Fatal("expected nested mutually recursive fields to be populated")
+	if len(registry.RecursiveSchemas()) != 2 {
+		t.Fatalf("expected both mutually recursive components, got %d", len(registry.RecursiveSchemas()))
+	}
+}
+
+func TestCloneSchema_StopsAtRef(t *testing.T) {
+	t.Parallel()
+
+	schema := &openapi.Schema{Ref: "#/components/schemas/node"}
+	clone := openapi.CloneSchema(schema)
+	if clone == schema || clone.Ref != schema.Ref {
+		t.Fatalf("expected copied reference schema, got %#v", clone)
 	}
 }

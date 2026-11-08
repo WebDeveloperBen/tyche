@@ -235,6 +235,9 @@ func registerOpenAPIOperation(grp RouteTarget, op Operation, inputType, outputTy
 		outputName = SchemaComponentName(outputType)
 	}
 	doc.AddSchema(outputName, outputSchema)
+	for name, schema := range registry.RecursiveSchemas() {
+		doc.AddSchema(name, schema)
+	}
 
 	grp.recordOperation(RegisteredOperation{
 		Method:      op.Method,
